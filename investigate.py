@@ -597,31 +597,53 @@ def main() -> None:
     validation = validate_report(report, inv.evidence)
     print_report(report, validation)
     repair = REPAIR_FOR_CAUSE[report["cause"]]
-    print(f"\nRepair for this diagnosis: {repair or 'none'} (approval and execution not built yet)")
+    print(f"\nRepair for this diagnosis: {repair or 'none'}")
     print(f"{len(inv.evidence)} checks, {seconds}s, {inv.usage['requests']} requests, "
           f"{inv.usage['input']} input / {inv.usage['output']} output tokens, ~${inv.cost_usd():.3f}")
+
+    if not args.no_followup:
+        while True:
+            try:
+                question = input("\nFollow-up (blank to finish): ").strip()
+            except EOFError:
+                break
+            if not question:
+                break
+            print(inv.follow_up(question))
+        print(f"\nSession total: {inv.usage['requests']} requests, ~${inv.cost_usd():.3f}")
+
+    repair_result = None
+    verification = None
+    if repair is not None:
+        import repair as repair_module
+
+        if repair not in repair_module.REPAIRS:
+            repair_result = {"repair": repair, "applied": False, "ok": False,
+                             "detail": "repair not implemented yet; nothing changed"}
+            print(f"\nRepair {repair}: not implemented yet; nothing changed.")
+        elif repair_module.ask_approval(repair, report["cause"]):
+            repair_result = repair_module.REPAIRS[repair]()
+            print(f"\nRepair {repair}: {'OK' if repair_result.get('ok') else 'FAILED'}: "
+                  f"{repair_result.get('detail')}")
+            verification = repair_module.verify_recovery()
+            print(f"Verification: {'OK' if verification.get('ok') else 'FAILED'}: "
+                  f"{verification.get('detail')}")
+        else:
+            repair_result = {"repair": repair, "applied": False, "ok": False,
+                             "detail": "declined; nothing changed"}
+            print(f"\nRepair {repair} declined; nothing changed.")
 
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
         with open(args.json, "w") as f:
             json.dump({"symptom": args.symptom, "model": MODEL, "effort": EFFORT,
                        "unavailable_checks": sorted(UNAVAILABLE), "report": report,
-                       "validation": validation, "repair": repair, "evidence": inv.evidence,
+                       "validation": validation, "repair": repair,
+                       "repair_result": repair_result, "verification": verification,
+                       "evidence": inv.evidence,
                        "investigation_notes": inv.notes, "seconds": seconds, "usage": inv.usage,
                        "cost_usd": round(inv.cost_usd(), 4),
                        "last_response_id": inv.last_response_id}, f, indent=2, default=str)
-
-    if args.no_followup:
-        return
-    while True:
-        try:
-            question = input("\nFollow-up (blank to finish): ").strip()
-        except EOFError:
-            break
-        if not question:
-            break
-        print(inv.follow_up(question))
-    print(f"\nSession total: {inv.usage['requests']} requests, ~${inv.cost_usd():.3f}")
 
 
 if __name__ == "__main__":
