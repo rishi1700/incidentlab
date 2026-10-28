@@ -7,7 +7,7 @@ Flow
   3. Ask for a schema-constrained incident report that cites evidence by ID, field and value.
   4. Check every citation against the raw evidence. The schema guarantees the shape of
      the report, not that its claims are true.
-  5. Answer follow-up questions in the same incident context (previous_response_id).
+  5. Answer follow-up questions in the same incident context (resent history).
 
 It never changes the system. Each diagnosis maps to one predefined repair in code
 (REPAIR_FOR_CAUSE); approval, execution and the upload/read-back verifier come next.
@@ -476,36 +476,28 @@ class Investigation:
         self.checks_in_loop = 0
         self.usage = {"requests": 0, "input": 0, "cached": 0, "output": 0}
         self.notes = ""
-        self.chain_retries = 0
+        self.history: list = []
 
     def _create(self, input_items: list, **extra):
-        # instructions, tools and reasoning effort are per request: they do not carry
-        # over through previous_response_id, so they are sent every time.
-        kwargs = {"model": MODEL, "instructions": INSTRUCTIONS, "input": input_items, **extra}
+        # Stateless replay: nothing is stored server-side, so instructions, tools,
+        # reasoning effort and the whole conversation go out on every request.
+        kwargs = {"model": MODEL, "instructions": INSTRUCTIONS, "input": input_items,
+                  "store": False, "include": ["reasoning.encrypted_content"], **extra}
         if EFFORT:
             kwargs["reasoning"] = {"effort": EFFORT}
-        if self.last_response_id:
-            kwargs["previous_response_id"] = self.last_response_id
-        # Meta's API sometimes rejects a chained request with 400 "referenced
-        # response not found or expired" when the previous response is not saved
-        # yet; its docs say to retry after a short wait.
-        waits = [1, 2, 4, 8, None] if "previous_response_id" in kwargs else [None]
-        for wait in waits:
-            try:
-                resp = self.client.responses.create(**kwargs)
-            except Exception as err:
-                if (wait is None or getattr(err, "status_code", None) != 400
-                        or "referenced response not found or expired" not in str(err).lower()):
-                    raise
-                self.chain_retries += 1
-                print(f"retrying chained request in {wait}s"
-                      f" (attempt {self.chain_retries}/4): previous response not saved yet",
-                      file=sys.stderr)
-                time.sleep(wait)
-                continue
-            self.last_response_id = resp.id
-            self._count(resp)
-            return resp
+        resp = self.client.responses.create(**kwargs)
+        self.last_response_id = resp.id
+        self._count(resp)
+        return resp
+
+    def _extend_history(self, resp) -> None:
+        """Replay a response's output items verbatim for the next request."""
+        items = [item.model_dump() for item in resp.output]
+        self.history.extend(items)
+        if items and items[-1].get("type") == "reasoning":
+            # A reasoning item must be followed by an assistant message or a
+            # function_call before the next user message.
+            self.history.append({"role": "assistant", "content": "Understood."})
 
     def _count(self, resp) -> None:
         self.usage["requests"] += 1
@@ -544,34 +536,41 @@ class Investigation:
         return {"type": "function_call_output", "call_id": call.call_id,
                 "output": json.dumps(result, default=str)}
 
-    def _tool_loop(self, input_items: list):
-        """Let the model run checks until it answers in text. Returns (response, pending outputs)."""
+    def _tool_loop(self):
+        """Let the model run checks until it answers in text. Returns the response or None."""
         self.checks_in_loop = 0
         for _ in range(MAX_TURNS):
-            resp = self._create(input_items, tools=TOOLS)
+            resp = self._create(self.history, tools=TOOLS)
+            self._extend_history(resp)
             calls = [item for item in resp.output if item.type == "function_call"]
             if not calls:        # tool_choice is always "auto": the model may answer in text at any turn
-                return resp, []
-            input_items = [self._answer(call) for call in calls]
-        return None, input_items   # hard stop: these results still have to be sent
+                return resp
+            self.history.extend(self._answer(call) for call in calls)
+        return None   # hard stop: the history already holds everything
 
     def investigate(self, symptom: str) -> dict:
-        resp, pending = self._tool_loop([{"role": "user", "content": symptom}])
+        self.history.append({"role": "user", "content": symptom})
+        resp = self._tool_loop()
         self.notes = resp.output_text if resp is not None else ""
+        self.history.append({"role": "user", "content": REPORT_REQUEST})
         resp = self._create(
-            pending + [{"role": "user", "content": REPORT_REQUEST}],
+            self.history,
             text={"format": {"type": "json_schema", "name": "incident_report",
                              "schema": REPORT_SCHEMA, "strict": True}},
         )
+        self._extend_history(resp)
         if not resp.output_text:
             raise RuntimeError(f"the report came back empty (status: {getattr(resp, 'status', '?')})")
         return json.loads(resp.output_text)
 
     def follow_up(self, question: str) -> str:
-        resp, pending = self._tool_loop([{"role": "user", "content": question}])
+        self.history.append({"role": "user", "content": question})
+        resp = self._tool_loop()
         if resp is None:
-            resp = self._create(pending + [{"role": "user", "content":
-                                            "Answer the question now with the evidence you have."}])
+            self.history.append({"role": "user", "content":
+                                 "Answer the question now with the evidence you have."})
+            resp = self._create(self.history)
+            self._extend_history(resp)
         return resp.output_text
 
 
@@ -666,7 +665,6 @@ def main() -> None:
                        "repair_result": repair_result, "verification": verification,
                        "evidence": inv.evidence,
                        "investigation_notes": inv.notes, "seconds": seconds, "usage": inv.usage,
-                       "chain_retries": inv.chain_retries,
                        "cost_usd": round(inv.cost_usd(), 4),
                        "last_response_id": inv.last_response_id}, f, indent=2, default=str)
 

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Unit tests for the chained-request retry. No model, docker or lab needed.
+"""Unit tests for stateless history replay. No model, docker or lab needed.
 
 Run from the repo root: python3 -m unittest tests.test_investigate -v
 """
 from __future__ import annotations
 
-import io
 import sys
 import types
 import unittest
@@ -25,10 +24,17 @@ except ImportError:
 import investigate
 
 
-class FakeChainError(Exception):
-    def __init__(self, message, status_code=400):
-        super().__init__(message)
-        self.status_code = status_code
+class FakeItem:
+    """An SDK response output item: attribute access plus model_dump()."""
+
+    def __init__(self, payload):
+        self._payload = dict(payload)
+
+    def __getattr__(self, name):
+        return self._payload[name]
+
+    def model_dump(self):
+        return dict(self._payload)
 
 
 class FakeResponses:
@@ -37,11 +43,11 @@ class FakeResponses:
         self.calls = []
 
     def create(self, **kwargs):
-        self.calls.append(kwargs)
-        outcome = self.script.pop(0)
-        if isinstance(outcome, Exception):
-            raise outcome
-        return outcome
+        # Snapshot: the caller keeps extending the history list afterwards.
+        snapshot = dict(kwargs)
+        snapshot["input"] = [dict(item) for item in kwargs["input"]]
+        self.calls.append(snapshot)
+        return self.script.pop(0)
 
 
 class FakeClient:
@@ -49,71 +55,92 @@ class FakeClient:
         self.responses = FakeResponses(script)
 
 
-def _ok_resp(resp_id="resp-2"):
-    return SimpleNamespace(id=resp_id, usage=None)
+def _resp(resp_id, output, text=""):
+    return SimpleNamespace(id=resp_id, output=output, output_text=text, usage=None)
 
 
-CHAIN_MSG = "referenced response not found or expired"
+REASONING = {"id": "rs-1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "hmm"}],
+             "encrypted_content": "enc-1"}
+CALL = {"id": "fc-1", "type": "function_call", "call_id": "call-1",
+        "name": "app_health", "arguments": "{}"}
+MESSAGE = {"id": "msg-1", "type": "message", "status": "completed", "role": "assistant",
+           "phase": "commentary", "content": [{"type": "output_text", "text": "checking"}]}
 
 
-class TestChainRetry(unittest.TestCase):
-    def _run(self, script, last_response_id="resp-1"):
+class TestStatelessReplay(unittest.TestCase):
+    def _investigate(self, script):
         client = FakeClient(script)
         inv = investigate.Investigation(client)
-        inv.last_response_id = last_response_id
-        stderr, sleeps = io.StringIO(), []
-        with (patch.object(sys, "stderr", stderr),
-              patch("investigate.time.sleep", side_effect=sleeps.append)):
-            try:
-                result = inv._create([{"role": "user", "content": "hi"}])
-            except Exception as err:   # noqa: BLE001 - asserted by callers
-                return inv, client, stderr, sleeps, err
-        return inv, client, stderr, sleeps, result
+        with (patch.object(investigate, "run_check", return_value={"status_code": 200}),
+              patch("builtins.print")):
+            inv.investigate("symptom")
+        return inv, client
 
-    def test_retries_then_succeeds(self):
-        inv, client, stderr, sleeps, result = self._run(
-            [FakeChainError(CHAIN_MSG), FakeChainError(CHAIN_MSG), _ok_resp()])
-        self.assertEqual(result.id, "resp-2")
-        self.assertEqual(inv.chain_retries, 2)
-        self.assertEqual(inv.last_response_id, "resp-2")
-        self.assertEqual(sleeps, [1, 2])
-        self.assertEqual(len(stderr.getvalue().strip().splitlines()), 2)
-        for kwargs in client.responses.calls:
-            self.assertEqual(kwargs["previous_response_id"], "resp-1")
-        self.assertEqual(len(client.responses.calls), 3)
+    def test_second_request_contains_first_response_items(self):
+        report = _resp("r3", [], text='{"cause": "healthy"}')
+        _, client = self._investigate([
+            _resp("r1", [FakeItem(REASONING), FakeItem(CALL)]),
+            _resp("r2", [FakeItem(MESSAGE)]),
+            report,
+        ])
+        first, second, third = (call["input"] for call in client.responses.calls)
+        self.assertEqual(first, [{"role": "user", "content": "symptom"}])
+        # Reasoning verbatim (encrypted_content and summary), then the call,
+        # then our function_call_output for it.
+        self.assertEqual(second[1], REASONING)
+        self.assertEqual(second[2], CALL)
+        self.assertEqual(second[3]["type"], "function_call_output")
+        self.assertEqual(second[3]["call_id"], "call-1")
+        # Report request sees the whole history plus the report prompt.
+        self.assertEqual(third[-1]["content"], investigate.REPORT_REQUEST)
+        self.assertIn(REASONING, third)
+        # Assistant message replayed verbatim, phase included.
+        self.assertIn(MESSAGE, third)
 
-    def test_gives_up_after_four_retries(self):
-        inv, client, stderr, sleeps, err = self._run([FakeChainError(CHAIN_MSG)] * 5)
-        self.assertIsInstance(err, FakeChainError)
-        self.assertEqual(inv.chain_retries, 4)
-        self.assertEqual(inv.last_response_id, "resp-1")
-        self.assertEqual(sleeps, [1, 2, 4, 8])
-        self.assertEqual(len(stderr.getvalue().strip().splitlines()), 4)
-        self.assertEqual(len(client.responses.calls), 5)
+    def test_requests_are_stateless(self):
+        _, client = self._investigate([
+            _resp("r1", [FakeItem(CALL)]),
+            _resp("r2", [FakeItem(MESSAGE)]),
+            _resp("r3", [], text='{"cause": "healthy"}'),
+        ])
+        for call in client.responses.calls:
+            self.assertIs(call["store"], False)
+            self.assertEqual(call["include"], ["reasoning.encrypted_content"])
+            self.assertNotIn("previous_response_id", call)
+            self.assertEqual(call["model"], investigate.MODEL)
+            self.assertEqual(call["instructions"], investigate.INSTRUCTIONS)
+        self.assertIn("tools", client.responses.calls[0])
+        self.assertNotIn("tools", client.responses.calls[2])
+        self.assertIn("text", client.responses.calls[2])
 
-    def test_first_request_never_retries(self):
-        inv, client, stderr, sleeps, err = self._run(
-            [FakeChainError(CHAIN_MSG)], last_response_id=None)
-        self.assertIsInstance(err, FakeChainError)
-        self.assertEqual(inv.chain_retries, 0)
-        self.assertEqual(sleeps, [])
-        self.assertEqual(stderr.getvalue(), "")
-        self.assertNotIn("previous_response_id", client.responses.calls[0])
+    def test_reasoning_only_turn_gets_filler_message(self):
+        # No function calls, so the tool loop ends at once and the report
+        # request is the second create.
+        _, client = self._investigate([
+            _resp("r1", [FakeItem(REASONING)]),
+            _resp("r2", [], text='{"cause": "healthy"}'),
+        ])
+        second = client.responses.calls[1]["input"]
+        self.assertEqual(second[1], REASONING)
+        self.assertEqual(second[2], {"role": "assistant", "content": "Understood."})
+        self.assertEqual(second[-1]["content"], investigate.REPORT_REQUEST)
 
-    def test_other_400_never_retries(self):
-        inv, client, stderr, sleeps, err = self._run(
-            [FakeChainError("invalid JSON in input")])
-        self.assertIsInstance(err, FakeChainError)
-        self.assertEqual(inv.chain_retries, 0)
-        self.assertEqual(sleeps, [])
-        self.assertEqual(len(client.responses.calls), 1)
-
-    def test_non_400_never_retries(self):
-        inv, client, stderr, sleeps, err = self._run(
-            [FakeChainError(CHAIN_MSG, status_code=500)])
-        self.assertIsInstance(err, FakeChainError)
-        self.assertEqual(inv.chain_retries, 0)
-        self.assertEqual(sleeps, [])
+    def test_follow_up_uses_same_history(self):
+        client = FakeClient([
+            _resp("r1", [FakeItem(CALL)]),
+            _resp("r2", [FakeItem(MESSAGE)]),
+            _resp("r3", [], text='{"cause": "healthy"}'),
+            _resp("r4", [FakeItem(MESSAGE)]),
+        ])
+        inv = investigate.Investigation(client)
+        with (patch.object(investigate, "run_check", return_value={"status_code": 200}),
+              patch("builtins.print")):
+            inv.investigate("symptom")
+            inv.follow_up("why?")
+        followup = client.responses.calls[3]["input"]
+        self.assertEqual(followup[-1], {"role": "user", "content": "why?"})
+        self.assertIn(CALL, followup)
+        self.assertNotIn("previous_response_id", client.responses.calls[3])
 
 
 if __name__ == "__main__":

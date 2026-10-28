@@ -12,6 +12,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "eval"))
@@ -24,6 +25,7 @@ except ImportError:
     sys.modules["openai"] = fake
 
 import run as run_module
+from lab import faults as faults_module
 
 
 class TestApiKey(unittest.TestCase):
@@ -97,6 +99,84 @@ class TestLoadRecorded(unittest.TestCase):
                     f.write(json.dumps(record) + "\n")
             done = run_module._load_recorded(path)
         self.assertEqual(done, {("V1", 1), ("P1", 1)})
+
+
+class TestRunModelEnv(unittest.TestCase):
+    def _model_json(self, tmpdir, unavailable):
+        path = Path(tmpdir) / "model.json"
+        path.write_text(json.dumps({
+            "report": {"cause": "healthy"}, "validation": {"supported": 1, "total": 1, "warnings": []},
+            "evidence": {"E1": {}}, "seconds": 1.0,
+            "usage": {"requests": 1, "input": 1, "cached": 0, "output": 1}, "cost_usd": 0.001,
+            "unavailable_checks": unavailable,
+        }))
+        return path
+
+    def test_passes_unavailable_checks_and_verifies_json(self):
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen.update(kwargs.get("env", {}))
+            return SimpleNamespace(returncode=0)
+
+        case = {"unavailable_checks": ["disk_usage", "container_logs"]}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._model_json(tmpdir, ["container_logs", "disk_usage"])
+            with patch("subprocess.run", side_effect=fake_run):
+                model = run_module._run_model(case, path, 60)
+        self.assertEqual(seen["INCIDENTLAB_UNAVAILABLE_CHECKS"], "disk_usage,container_logs")
+        self.assertEqual(model["cause"], "healthy")
+
+    def test_unavailable_mismatch_is_harness_error(self):
+        def fake_run(cmd, **kwargs):
+            return SimpleNamespace(returncode=0)
+
+        case = {"unavailable_checks": ["disk_usage"]}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._model_json(tmpdir, [])
+            with patch("subprocess.run", side_effect=fake_run):
+                with self.assertRaisesRegex(run_module.HarnessError, "mismatch"):
+                    run_module._run_model(case, path, 60)
+
+
+class TestProbeUpload(unittest.TestCase):
+    def test_failed_probe_cleans_residue(self):
+        with (patch.object(run_module, "post_upload", side_effect=Exception("boom")),
+              patch.object(run_module, "delete_file") as delete,
+              patch("os.listdir", side_effect=[["old.part"], ["old.part", "new.part"], ["old.part"]]),
+              patch.object(faults_module, "_docker") as helper,
+              patch("builtins.print")):
+            run_module._probe_upload_must_fail("P3")
+        helper.assert_called_once_with("rm", "-f", "/d/tmp/new.part")
+        delete.assert_not_called()
+
+    def test_no_residue_no_cleanup(self):
+        with (patch.object(run_module, "post_upload", side_effect=Exception("boom")),
+              patch.object(run_module, "delete_file") as delete,
+              patch("os.listdir", side_effect=[[], []]),
+              patch.object(faults_module, "_docker") as helper,
+              patch("builtins.print")):
+            run_module._probe_upload_must_fail("D1")
+        helper.assert_not_called()
+        delete.assert_not_called()
+
+    def test_succeeded_probe_is_harness_error(self):
+        with (patch.object(run_module, "post_upload", return_value={"id": "abc"}),
+              patch.object(run_module, "delete_file") as delete,
+              patch("os.listdir", side_effect=[[], []]),
+              patch.object(faults_module, "_docker"),
+              patch("builtins.print")):
+            with self.assertRaisesRegex(run_module.HarnessError, "succeeded"):
+                run_module._probe_upload_must_fail("P3")
+        delete.assert_called_once_with("abc")
+
+    def test_remaining_residue_is_harness_error(self):
+        with (patch.object(run_module, "post_upload", side_effect=Exception("boom")),
+              patch("os.listdir", side_effect=[[], ["stuck.part"], ["stuck.part"]]),
+              patch.object(faults_module, "_docker"),
+              patch("builtins.print")):
+            with self.assertRaisesRegex(run_module.HarnessError, "residue remains"):
+                run_module._probe_upload_must_fail("V3")
 
 
 if __name__ == "__main__":

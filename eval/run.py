@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT / "eval"))
 
 import investigate
 from lab import faults
+from lab.verify import SIZE, delete_file, post_upload
 
 import baseline as baseline_module
 
@@ -144,7 +145,7 @@ def _run_model(case: dict, model_path: Path, timeout: int) -> dict:
         proc = subprocess.run(
             [sys.executable, str(ROOT / "investigate.py"),
              "--no-followup", "--json", str(model_path)],
-            cwd=ROOT, stdin=subprocess.DEVNULL, timeout=timeout,
+            cwd=ROOT, stdin=subprocess.DEVNULL, timeout=timeout, env=env,
         )
     except (OSError, subprocess.TimeoutExpired) as err:
         raise HarnessError("model", f"model run failed: {err}") from None
@@ -153,6 +154,11 @@ def _run_model(case: dict, model_path: Path, timeout: int) -> dict:
     try:
         with open(model_path) as f:
             data = json.load(f)
+        got = sorted(data.get("unavailable_checks", []))
+        want = sorted(case["unavailable_checks"])
+        if got != want:
+            raise HarnessError("model", f"unavailable_checks mismatch:"
+                               f" model saw {got}, case wants {want}")
         return {
             "cause": data["report"]["cause"],
             "supported": data["validation"]["supported"],
@@ -165,6 +171,51 @@ def _run_model(case: dict, model_path: Path, timeout: int) -> dict:
         }
     except (OSError, ValueError, KeyError, TypeError) as err:
         raise HarnessError("model", f"bad model json: {err}") from None
+
+
+def _probe_upload_must_fail(setup: str) -> None:
+    """Upload 1 MB the way the reporting user did; it must fail on a fault.
+
+    Removes any tmp/ files the probe created, so the case is left pristine
+    (V3's few hundred KB of margin would not survive the partial upload).
+    """
+    host_tmp = os.path.join(faults.DATA_MOUNT, faults.TMP)
+    try:
+        before = set(os.listdir(host_tmp))
+    except OSError as err:
+        raise HarnessError("setup-confirm", f"cannot list tmp/: {err}") from None
+    try:
+        result = post_upload(os.urandom(SIZE))
+    except Exception as err:
+        print(f"probe upload failed as expected ({type(err).__name__})", flush=True)
+        succeeded = False
+    else:
+        succeeded = True
+    try:
+        new = sorted(set(os.listdir(host_tmp)) - before)
+    except OSError as err:
+        raise HarnessError("setup-confirm", f"cannot list tmp/: {err}") from None
+    if new:
+        try:
+            faults._docker("rm", "-f", *(f"/d/{faults.TMP}/{name}" for name in new))
+        except Exception as err:
+            raise HarnessError("setup-confirm",
+                               f"cannot clean probe residue: {err}") from None
+        try:
+            still = sorted(set(os.listdir(host_tmp)) - before)
+        except OSError as err:
+            raise HarnessError("setup-confirm", f"cannot list tmp/: {err}") from None
+        if still:
+            raise HarnessError("setup-confirm",
+                               f"probe residue remains in tmp/: {still[:3]}")
+    if succeeded:
+        try:
+            delete_file(result["id"])
+        except Exception as err:
+            print(f"WARNING: probe upload succeeded and cleanup failed: {err}",
+                  file=sys.stderr)
+        raise HarnessError("setup-confirm",
+                           f"{setup}: probe upload succeeded; expected failure")
 
 
 def _run_repair_step(repair: str | None) -> tuple[str | None, bool]:
@@ -212,9 +263,11 @@ def _one_run(case: dict, run_no: int, commit: str, no_model: bool,
             if problems:
                 raise HarnessError("setup-confirm",
                                    "healthy setup not clean: " + "; ".join(problems))
-        elif not problems:
-            raise HarnessError("setup-confirm",
-                               f"{case['setup']} shows no fault")
+        else:
+            if not problems:
+                raise HarnessError("setup-confirm",
+                                   f"{case['setup']} shows no fault")
+            _probe_upload_must_fail(case["setup"])
 
         try:
             base = baseline_module.run(set(case["unavailable_checks"]))
