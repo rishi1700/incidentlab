@@ -15,13 +15,14 @@ from fastapi.responses import FileResponse, JSONResponse
 log = logging.getLogger("incidentlab")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://lab:lab@db:5432/lab")
+CONNECT_TIMEOUT = 2   # seconds; keeps /health inside the 3s check limit when db is paused
 DATA_DIR = Path("/data")
 TMP_DIR = DATA_DIR / "tmp"
 UPLOAD_DIR = DATA_DIR / "uploads"
 
 
 def init_db() -> None:
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS files ("
             "id TEXT PRIMARY KEY, "
@@ -61,7 +62,7 @@ def upload(file: UploadFile):
     hexdigest = digest.hexdigest()
     os.replace(tmp_path, final_path)
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
+        with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:
             conn.execute(
                 "INSERT INTO files (id, name, size, sha256) VALUES (%s, %s, %s, %s)",
                 (file_id, file.filename or "upload", size, hexdigest),
@@ -80,7 +81,7 @@ def upload(file: UploadFile):
 def download(file_id: str):
     if not file_id or not all(c in "0123456789abcdef" for c in file_id):
         raise HTTPException(status_code=404, detail="not found")
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:
         row = conn.execute(
             "SELECT name FROM files WHERE id = %s", (file_id,)
         ).fetchone()
@@ -96,7 +97,7 @@ def download(file_id: str):
 def delete_file(file_id: str):
     if not file_id or not all(c in "0123456789abcdef" for c in file_id):
         raise HTTPException(status_code=404, detail="not found")
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:
         row = conn.execute(
             "DELETE FROM files WHERE id = %s RETURNING name", (file_id,)
         ).fetchone()
@@ -109,7 +110,7 @@ def delete_file(file_id: str):
 @app.get("/health")
 def health():
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
+        with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:
             conn.execute("SELECT 1").fetchone()
         probe = UPLOAD_DIR / f".health-{secrets.token_hex(8)}"
         with open(probe, "wb") as f:

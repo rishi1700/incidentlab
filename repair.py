@@ -19,7 +19,6 @@ import hashlib
 import json
 import os
 import secrets
-import stat
 import subprocess
 import sys
 import time
@@ -31,6 +30,7 @@ APP_UID = int(os.environ.get("INCIDENTLAB_APP_UID", "1000"))
 APP_GID = int(os.environ.get("INCIDENTLAB_APP_GID", "1000"))
 APP = os.environ.get("INCIDENTLAB_APP", "incidentlab-app-1")
 DB = os.environ.get("INCIDENTLAB_DB", "incidentlab-db-1")
+DB_ALIAS = os.environ.get("INCIDENTLAB_DB_ALIAS", "db")
 
 STALE_SECONDS = 3600   # a .part file older than one hour is a stale orphan
 DB_READY_TIMEOUT = 90  # seconds to wait for the database to accept connections
@@ -86,52 +86,34 @@ def _db_ready(data: dict) -> bool:
 
 
 def restore_upload_dir_access() -> dict:
-    """Owner 1000:1000, mode 755 on uploads/. Touches only that directory."""
+    """Owner 1000:1000, mode 755 on uploads/ and tmp/. Touches only those."""
     try:
-        _docker("chown", f"{APP_UID}:{APP_GID}", f"/d/{UPLOADS}")
-        _docker("chmod", "755", f"/d/{UPLOADS}")
+        for dirname in (UPLOADS, TMP):
+            _docker("chown", f"{APP_UID}:{APP_GID}", f"/d/{dirname}")
+            _docker("chmod", "755", f"/d/{dirname}")
     except RuntimeError as err:
         return {"repair": REPAIR_NAME, "applied": True, "ok": False, "detail": str(err)}
     return {"repair": REPAIR_NAME, "applied": True, "ok": True,
-            "detail": f"{UPLOADS}/ owner {APP_UID}:{APP_GID} mode 0755"}
+            "detail": f"{UPLOADS}/ and {TMP}/ owner {APP_UID}:{APP_GID} mode 0755"}
 
 
 def clear_stale_temp_files() -> dict:
-    """Delete .part files older than one hour in tmp/. Touches only those files."""
-    host_tmp = os.path.join(DATA_MOUNT, TMP)
-    try:
-        entries = os.listdir(host_tmp)
-    except FileNotFoundError:
+    """Delete .part files older than one hour in tmp/ with one find helper."""
+    if not os.path.isdir(os.path.join(DATA_MOUNT, TMP)):
         return {"repair": REPAIR_TMP, "applied": True, "ok": True,
                 "detail": f"{TMP}/ not present, nothing to delete"}
-    except OSError as err:
-        return {"repair": REPAIR_TMP, "applied": True, "ok": False,
-                "detail": f"cannot list {TMP}/: {err}"}
-    now = time.time()
-    stale: list[str] = []
-    freed = 0
-    for entry in sorted(entries):
-        if not entry.endswith(".part"):
-            continue
-        try:
-            st = os.stat(os.path.join(host_tmp, entry))
-        except OSError:
-            continue
-        if not stat.S_ISREG(st.st_mode):
-            continue
-        if now - st.st_mtime <= STALE_SECONDS:
-            continue
-        stale.append(entry)
-        freed += st.st_size
-    if not stale:
-        return {"repair": REPAIR_TMP, "applied": True, "ok": True,
-                "detail": f"no stale .part files in {TMP}/, nothing to delete"}
     try:
-        _docker("rm", "-f", *(f"/d/{TMP}/{name}" for name in stale))
+        out = _docker("find", f"/d/{TMP}", "-maxdepth", "1", "-name", "*.part",
+                      "-type", "f", "-mmin", f"+{STALE_SECONDS // 60}",
+                      "-delete", "-print")
     except RuntimeError as err:
         return {"repair": REPAIR_TMP, "applied": True, "ok": False, "detail": str(err)}
+    deleted = [line for line in out.splitlines() if line.strip()]
+    if not deleted:
+        return {"repair": REPAIR_TMP, "applied": True, "ok": True,
+                "detail": f"no stale .part files in {TMP}/, nothing to delete"}
     return {"repair": REPAIR_TMP, "applied": True, "ok": True,
-            "detail": f"deleted {len(stale)} stale .part file(s), freed {freed / 2 ** 20:.1f} MB"}
+            "detail": f"deleted {len(deleted)} stale .part file(s) in {TMP}/"}
 
 
 def restore_database() -> dict:
@@ -154,7 +136,7 @@ def restore_database() -> dict:
         db_networks = set(((_inspect_container(DB).get("NetworkSettings") or {})
                            .get("Networks") or {}))
         for network in sorted(app_networks - db_networks):
-            _docker_cmd("network", "connect", network, DB)
+            _docker_cmd("network", "connect", "--alias", DB_ALIAS, network, DB)
             actions.append(f"connected to {network}")
         deadline = time.monotonic() + DB_READY_TIMEOUT
         while True:

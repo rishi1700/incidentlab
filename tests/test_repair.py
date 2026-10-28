@@ -7,10 +7,8 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -57,7 +55,7 @@ class TestApproval(unittest.TestCase):
 
 
 class TestRepairCommand(unittest.TestCase):
-    def test_touches_only_uploads_dir(self):
+    def test_touches_only_upload_and_tmp_dirs(self):
         cmds = []
 
         class Proc:
@@ -67,34 +65,31 @@ class TestRepairCommand(unittest.TestCase):
         with patch("repair.subprocess.run", side_effect=lambda c, **k: cmds.append(c) or Proc()):
             result = repair.restore_upload_dir_access()
         self.assertTrue(result["ok"])
-        self.assertEqual(len(cmds), 2)
+        self.assertEqual(len(cmds), 4)
+        self.assertEqual([cmd[-1] for cmd in cmds],
+                         ["/d/uploads", "/d/uploads", "/d/tmp", "/d/tmp"])
         for cmd in cmds:
             self.assertEqual(cmd[:4], ["docker", "run", "--rm", "-v"])
             self.assertNotIn("--name", cmd)
             self.assertFalse(any(a in ("-e", "--env", "--label", "-l") for a in cmd))
-            self.assertTrue(cmd[-1].startswith("/d/uploads"), cmd)
         self.assertIn("chown", cmds[0])
         self.assertIn("1000:1000", cmds[0])
         self.assertIn("chmod", cmds[1])
         self.assertIn("755", cmds[1])
+        self.assertIn("chown", cmds[2])
+        self.assertIn("chmod", cmds[3])
 
 
 class TestClearStaleTempFiles(unittest.TestCase):
-    def _part(self, tmpdir: str, name: str, age_seconds: float, size: int = 10) -> Path:
-        path = Path(tmpdir) / "tmp" / name
-        path.write_bytes(b"x" * size)
-        old = time.time() - age_seconds
-        os.utime(path, (old, old))
-        return path
-
-    def _run(self):
+    def _run(self, stdout="", returncode=0, stderr=""):
         cmds = []
 
         class Proc:
-            returncode = 0
-            stdout, stderr = "", ""
+            pass
 
-        with patch("repair.subprocess.run", side_effect=lambda c, **k: cmds.append(c) or Proc()):
+        proc = Proc()
+        proc.returncode, proc.stdout, proc.stderr = returncode, stdout, stderr
+        with patch("repair.subprocess.run", side_effect=lambda c, **k: cmds.append(c) or proc):
             result = repair.clear_stale_temp_files()
         return result, cmds
 
@@ -105,16 +100,11 @@ class TestClearStaleTempFiles(unittest.TestCase):
         with patch.dict(repair.REPAIRS, {"clear_stale_temp_files": lambda: {"ok": True, "detail": "mocked"}}):
             self.assertEqual(repair.main(["clear_stale_temp_files", "--yes", "--no-verify"]), 0)
 
-    def test_deletes_only_stale_part_files(self):
+    def test_deletes_via_one_find_helper(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            os.mkdir(os.path.join(tmpdir, "tmp"))
-            self._part(tmpdir, "stale1.part", 2 * 24 * 3600)
-            self._part(tmpdir, "stale2.part", 2 * 3600)
-            self._part(tmpdir, "fresh.part", 10)
-            self._part(tmpdir, "notes.txt", 2 * 24 * 3600)
-            os.mkdir(os.path.join(tmpdir, "tmp", "dir.part"))
+            Path(tmpdir, "tmp").mkdir()
             with patch.object(repair, "DATA_MOUNT", tmpdir):
-                result, cmds = self._run()
+                result, cmds = self._run("/d/tmp/a.part\n/d/tmp/b.part\n")
         self.assertTrue(result["ok"], result)
         self.assertIn("deleted 2", result["detail"])
         self.assertEqual(len(cmds), 1)
@@ -122,40 +112,31 @@ class TestClearStaleTempFiles(unittest.TestCase):
         self.assertEqual(cmd[:4], ["docker", "run", "--rm", "-v"])
         self.assertNotIn("--name", cmd)
         self.assertFalse(any(a in ("-e", "--env", "--label", "-l") for a in cmd))
-        self.assertEqual(cmd[5:8], ["alpine", "rm", "-f"])
-        self.assertEqual(sorted(cmd[8:]), ["/d/tmp/stale1.part", "/d/tmp/stale2.part"])
+        self.assertEqual(cmd[5:], ["alpine", "find", "/d/tmp", "-maxdepth", "1",
+                                  "-name", "*.part", "-type", "f", "-mmin", "+60",
+                                  "-delete", "-print"])
 
     def test_noop_when_nothing_stale(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            os.mkdir(os.path.join(tmpdir, "tmp"))
-            self._part(tmpdir, "fresh.part", 10)
-            self._part(tmpdir, "notes.txt", 2 * 24 * 3600)
+            Path(tmpdir, "tmp").mkdir()
             with patch.object(repair, "DATA_MOUNT", tmpdir):
-                result, cmds = self._run()
+                result, cmds = self._run("")
         self.assertTrue(result["ok"], result)
         self.assertIn("nothing to delete", result["detail"])
-        self.assertEqual(cmds, [])
+        self.assertEqual(len(cmds), 1)
 
-    def test_missing_tmp_is_noop(self):
+    def test_missing_tmp_skips_helper(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.object(repair, "DATA_MOUNT", tmpdir):
                 result, cmds = self._run()
         self.assertTrue(result["ok"], result)
         self.assertEqual(cmds, [])
 
-    def test_rm_failure_is_not_ok(self):
-        class Proc:
-            returncode = 1
-            stdout, stderr = "", "boom"
-
+    def test_find_failure_is_not_ok(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            os.mkdir(os.path.join(tmpdir, "tmp"))
-            self._part(tmpdir, "stale.part", 2 * 24 * 3600)
-            with (
-                patch.object(repair, "DATA_MOUNT", tmpdir),
-                patch("repair.subprocess.run", side_effect=lambda c, **k: Proc()),
-            ):
-                result = repair.clear_stale_temp_files()
+            Path(tmpdir, "tmp").mkdir()
+            with patch.object(repair, "DATA_MOUNT", tmpdir):
+                result, _ = self._run(returncode=1, stderr="boom")
         self.assertFalse(result["ok"])
         self.assertIn("boom", result["detail"])
 
@@ -234,7 +215,8 @@ class TestRestoreDatabase(unittest.TestCase):
         result, cmds = self._run([lonely, lonely])
         self.assertTrue(result["ok"], result)
         self.assertIn("connected to", result["detail"])
-        self.assertIn(["docker", "network", "connect", self.NET, repair.DB], cmds)
+        self.assertIn(["docker", "network", "connect", "--alias", repair.DB_ALIAS,
+                       self.NET, repair.DB], cmds)
 
     def test_already_healthy_is_noop(self):
         result, cmds = self._run([self._db()])

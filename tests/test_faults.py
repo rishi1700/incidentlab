@@ -17,9 +17,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lab import faults
 
 
-def _uploads_ok(writable=True):
+def _uploads_ok(writable=True, tmp_writable=True):
     return {"path": "/srv/lab-data/uploads", "owner_uid": 0 if not writable else 1000,
-            "owner_gid": 1000, "mode": "0755", "app_user_can_write": writable}
+            "owner_gid": 1000, "mode": "0755", "app_user_can_write": writable,
+            "tmp_path": "/srv/lab-data/tmp", "tmp_owner_uid": 0 if not tmp_writable else 1000,
+            "tmp_owner_gid": 1000, "tmp_mode": "0755", "tmp_app_user_can_write": tmp_writable}
+
+
+def _app_nets(*networks):
+    return {"NetworkSettings": {"Networks": {n: {} for n in networks}}}
 
 
 def _volume_ok(percent=3.8, avail=434.0):
@@ -28,9 +34,10 @@ def _volume_ok(percent=3.8, avail=434.0):
             "tmp_part_files": 0, "tmp_part_mb": 0.0, "tmp_part_stale_files": 0}
 
 
-def _db_ok(running=True, paused=False, health="healthy", status="running"):
+def _db_ok(running=True, paused=False, health="healthy", status="running",
+           networks=("incidentlab_default",)):
     return {"name": faults.DB, "status": status, "running": running, "paused": paused,
-            "health": health, "started_at": "x", "networks": ["incidentlab_default"]}
+            "health": health, "started_at": "x", "networks": list(networks)}
 
 
 class TestInjectGate(unittest.TestCase):
@@ -38,10 +45,25 @@ class TestInjectGate(unittest.TestCase):
         with (patch.object(faults, "status_uploads", return_value=_uploads_ok(False)),
               patch.object(faults, "status_volume", return_value=_volume_ok()),
               patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier") as verifier,
               patch.object(faults, "_docker") as helper):
             with self.assertRaisesRegex(RuntimeError, "refusing to inject"):
                 faults.inject("upload_dir_not_writable")
+            verifier.assert_not_called()
+            helper.assert_not_called()
+
+    def test_refuses_when_tmp_not_writable(self):
+        with (patch.object(faults, "status_uploads", return_value=_uploads_ok(True, False)),
+              patch.object(faults, "status_volume", return_value=_volume_ok()),
+              patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
+              patch.object(faults, "_run_verifier") as verifier,
+              patch.object(faults, "_docker") as helper):
+            with self.assertRaisesRegex(RuntimeError, "tmp/ not writable"):
+                faults.inject("P3")
             verifier.assert_not_called()
             helper.assert_not_called()
 
@@ -50,6 +72,8 @@ class TestInjectGate(unittest.TestCase):
               patch.object(faults, "status_volume",
                            return_value=_volume_ok(percent=100.0, avail=0.2)),
               patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier") as verifier,
               patch.object(faults, "_docker") as helper):
             with self.assertRaisesRegex(RuntimeError, "100.0% full"):
@@ -62,6 +86,8 @@ class TestInjectGate(unittest.TestCase):
               patch.object(faults, "status_volume", return_value=_volume_ok()),
               patch.object(faults, "status_database",
                            return_value=_db_ok(running=False, status="exited")),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier") as verifier,
               patch.object(faults, "_docker_cmd") as cmd):
             with self.assertRaisesRegex(RuntimeError, "not running"):
@@ -69,10 +95,25 @@ class TestInjectGate(unittest.TestCase):
             verifier.assert_not_called()
             cmd.assert_not_called()
 
+    def test_refuses_when_db_shares_no_network(self):
+        with (patch.object(faults, "status_uploads", return_value=_uploads_ok()),
+              patch.object(faults, "status_volume", return_value=_volume_ok()),
+              patch.object(faults, "status_database", return_value=_db_ok(networks=())),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
+              patch.object(faults, "_run_verifier") as verifier,
+              patch.object(faults, "_docker_cmd") as cmd):
+            with self.assertRaisesRegex(RuntimeError, "shares no network"):
+                faults.inject("D3")
+            verifier.assert_not_called()
+            cmd.assert_not_called()
+
     def test_refuses_when_verify_fails(self):
         with (patch.object(faults, "status_uploads", return_value=_uploads_ok()),
               patch.object(faults, "status_volume", return_value=_volume_ok()),
               patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier",
                            return_value=(False, "UPLOAD FAILED: boom")),
               patch.object(faults, "_docker_cmd") as cmd):
@@ -84,6 +125,8 @@ class TestInjectGate(unittest.TestCase):
         with (patch.object(faults, "status_uploads", return_value=_uploads_ok()),
               patch.object(faults, "status_volume", return_value=_volume_ok()),
               patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier", return_value=(True, "OK")),
               patch.object(faults, "_docker") as helper):
             with patch("builtins.print"):
@@ -94,30 +137,154 @@ class TestInjectGate(unittest.TestCase):
         with (patch.object(faults, "status_uploads", return_value=_uploads_ok()),
               patch.object(faults, "status_volume", return_value=_volume_ok()),
               patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier", return_value=(True, "OK")),
               patch.object(faults, "_docker_cmd") as cmd):
             with patch("builtins.print"):
                 faults.inject("database_unavailable")
             cmd.assert_called_once_with("stop", faults.DB)
 
-    def test_unknown_fault_still_value_error(self):
+    def test_unknown_variant_still_value_error(self):
         with patch.object(faults, "status_uploads") as uploads:
             with self.assertRaises(ValueError):
                 faults.inject("nope")
             uploads.assert_not_called()
 
-    def test_listed_fault_without_branch_raises(self):
-        with (patch.object(faults, "FAULTS", faults.FAULTS + ["future_fault"]),
+    def test_listed_variant_without_branch_raises(self):
+        with (patch.object(faults, "VARIANTS", faults.VARIANTS + ["future_variant"]),
               patch.object(faults, "status_uploads", return_value=_uploads_ok()),
               patch.object(faults, "status_volume", return_value=_volume_ok()),
               patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
               patch.object(faults, "_run_verifier", return_value=(True, "OK")),
               patch.object(faults, "_docker_cmd") as cmd,
               patch.object(faults, "_docker") as helper):
             with self.assertRaisesRegex(RuntimeError, "no inject branch"):
-                faults.inject("future_fault")
+                faults.inject("future_variant")
             cmd.assert_not_called()
             helper.assert_not_called()
+
+
+class TestVariantDispatch(unittest.TestCase):
+    INJECT_TARGETS = {
+        "V1": "_inject_v1", "V2": "_inject_v2", "V3": "_inject_v3",
+        "P1": "_docker", "P2": "_docker", "P3": "_docker",
+        "D1": "_docker_cmd", "D2": "_docker_cmd", "D3": "_inject_d3",
+        "H2": "_setup_h2", "H3": "_setup_h3",
+        "volume_full": "_inject_v1",
+        "upload_dir_not_writable": "_docker",
+        "database_unavailable": "_docker_cmd",
+    }
+
+    def test_inject_dispatch_matrix(self):
+        mocks = {}
+        for name in set(self.INJECT_TARGETS.values()):
+            patcher = patch.object(faults, name)
+            mocks[name] = patcher.start()
+            self.addCleanup(patcher.stop)
+        with (patch.object(faults, "status_uploads", return_value=_uploads_ok()),
+              patch.object(faults, "status_volume", return_value=_volume_ok()),
+              patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
+              patch.object(faults, "_run_verifier", return_value=(True, "OK")),
+              patch("builtins.print")):
+            for variant, target in self.INJECT_TARGETS.items():
+                with self.subTest(variant=variant):
+                    for mock in mocks.values():
+                        mock.reset_mock()
+                    faults.inject(variant)
+                    mocks[target].assert_called()
+                    for name, mock in mocks.items():
+                        if name != target:
+                            mock.assert_not_called()
+
+    def test_inject_h1_confirms_clean(self):
+        with (patch.object(faults, "status_uploads", return_value=_uploads_ok()),
+              patch.object(faults, "status_volume", return_value=_volume_ok()),
+              patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_inspect_container",
+                           return_value=_app_nets("incidentlab_default")),
+              patch.object(faults, "_run_verifier", return_value=(True, "OK")),
+              patch.object(faults, "_docker") as helper,
+              patch.object(faults, "_docker_cmd") as cmd,
+              patch("builtins.print") as echoed):
+            faults.inject("H1")
+            helper.assert_not_called()
+            cmd.assert_not_called()
+            echoed.assert_called_once()
+            self.assertIn("confirmed clean", echoed.call_args[0][0])
+
+    def test_reset_dispatch_matrix(self):
+        targets = {**dict.fromkeys(
+            ("V1", "V2", "V3", "volume_full"), "_reset_volume_full"),
+            **dict.fromkeys(
+                ("P1", "P2", "P3", "upload_dir_not_writable"), "_docker"),
+            **dict.fromkeys(
+                ("D1", "D2", "D3", "database_unavailable"), "_reset_database")}
+        mocks = {}
+        for name in ("_reset_volume_full", "_docker", "_reset_database"):
+            patcher = patch.object(faults, name)
+            mocks[name] = patcher.start()
+            self.addCleanup(patcher.stop)
+        with (patch.object(faults, "_wait_app_healthy"),
+              patch("builtins.print")):
+            for variant, target in targets.items():
+                with self.subTest(variant=variant):
+                    for mock in mocks.values():
+                        mock.reset_mock()
+                    faults.reset(variant)
+                    mocks[target].assert_called()
+                    for name, mock in mocks.items():
+                        if name != target:
+                            mock.assert_not_called()
+            for variant in ("H1", "H2", "H3"):
+                with self.subTest(variant=variant):
+                    for mock in mocks.values():
+                        mock.reset_mock()
+                    faults.reset(variant)
+                    for mock in mocks.values():
+                        mock.assert_not_called()
+
+    def test_reset_unknown_variant_raises(self):
+        with self.assertRaises(ValueError):
+            faults.reset("nope")
+
+    def test_status_healthy_setup_raises(self):
+        with self.assertRaisesRegex(ValueError, "run the verifier"):
+            faults.status("H2")
+
+    def test_status_unknown_variant_raises(self):
+        with self.assertRaises(ValueError):
+            faults.status("nope")
+
+
+class TestHealthySetupLogChecks(unittest.TestCase):
+    def test_h2_reads_merged_logs(self):
+        with (patch.object(faults, "_docker_cmd",
+                           return_value="OperationalError: connection failed") as cmd,
+              patch.object(faults, "_hit_health"),
+              patch.object(faults, "_run_verifier", return_value=(False, "x")),
+              patch.object(faults, "_wait_db_healthy"),
+              patch.object(faults, "_wait_app_healthy")):
+            faults._setup_h2()
+        log_calls = [c for c in cmd.call_args_list if c.args[:1] == ("logs",)]
+        self.assertEqual(len(log_calls), 1)
+        self.assertTrue(log_calls[0].kwargs.get("merge_stderr"))
+
+    def test_h3_reads_merged_logs(self):
+        with (patch.object(faults, "_docker_cmd",
+                           return_value="OSError: No space left on device") as cmd,
+              patch.object(faults, "_inject_v1"),
+              patch.object(faults, "_run_verifier", return_value=(False, "x")),
+              patch.object(faults, "_run_child", return_value=(True, "OK")),
+              patch.object(faults, "_wait_app_healthy")):
+            faults._setup_h3()
+        log_calls = [c for c in cmd.call_args_list if c.args[:1] == ("logs",)]
+        self.assertEqual(len(log_calls), 1)
+        self.assertTrue(log_calls[0].kwargs.get("merge_stderr"))
 
 
 class TestResetWaitsForHealth(unittest.TestCase):
