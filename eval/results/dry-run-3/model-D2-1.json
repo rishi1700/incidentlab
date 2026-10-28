@@ -1,0 +1,631 @@
+{
+  "symptom": "Uploads have stopped working. Find out what is happening.",
+  "model": "muse-spark-1.3",
+  "effort": "medium",
+  "unavailable_checks": [],
+  "report": {
+    "cause": "database_unavailable",
+    "findings": [
+      {
+        "citation": {
+          "evidence_id": "E3",
+          "field": "lines",
+          "value": "psycopg.errors.ConnectionTimeout: connection timeout expired"
+        },
+        "claim": "Uploads and health checks fail with database connection timeout"
+      },
+      {
+        "citation": {
+          "evidence_id": "E2",
+          "field": "status_code",
+          "value": "503"
+        },
+        "claim": "App health endpoint is unhealthy"
+      },
+      {
+        "citation": {
+          "evidence_id": "E4",
+          "field": "status",
+          "value": "paused"
+        },
+        "claim": "Database container incidentlab-db-1 is paused"
+      },
+      {
+        "citation": {
+          "evidence_id": "E9",
+          "field": "events.49.action",
+          "value": "pause"
+        },
+        "claim": "Recent events record a pause action for incidentlab-db-1 as the last event"
+      }
+    ],
+    "open_questions": [
+      "What actor issued the pause command for incidentlab-db-1"
+    ],
+    "ruled_out": [
+      {
+        "cause": "volume_full",
+        "citation": {
+          "evidence_id": "E6",
+          "field": "use_percent",
+          "value": "9.0"
+        },
+        "reason": "Filesystem only 9% used, not full"
+      },
+      {
+        "cause": "upload_dir_not_writable",
+        "citation": {
+          "evidence_id": "E7",
+          "field": "app_user_can_write",
+          "value": "true"
+        },
+        "reason": "Upload directory is writable by app user"
+      }
+    ],
+    "summary": "Uploads fail because the app cannot reach the database. The database container is paused, causing connection timeouts and 503 health status, while disk space and upload permissions are normal."
+  },
+  "validation": {
+    "citations": [
+      {
+        "kind": "finding",
+        "text": "Uploads and health checks fail with database connection timeout",
+        "supported": true,
+        "detail": "E3.lines matches"
+      },
+      {
+        "kind": "finding",
+        "text": "App health endpoint is unhealthy",
+        "supported": true,
+        "detail": "E2.status_code matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Database container incidentlab-db-1 is paused",
+        "supported": true,
+        "detail": "E4.status matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Recent events record a pause action for incidentlab-db-1 as the last event",
+        "supported": true,
+        "detail": "E9.events.49.action matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "volume_full: Filesystem only 9% used, not full",
+        "supported": true,
+        "detail": "E6.use_percent matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "upload_dir_not_writable: Upload directory is writable by app user",
+        "supported": true,
+        "detail": "E7.app_user_can_write matches"
+      }
+    ],
+    "supported": 6,
+    "total": 6,
+    "warnings": []
+  },
+  "repair": "restore_database",
+  "repair_result": {
+    "repair": "restore_database",
+    "applied": false,
+    "ok": false,
+    "detail": "declined; nothing changed"
+  },
+  "verification": null,
+  "evidence": {
+    "E1": {
+      "check": "list_containers",
+      "arguments": "{}",
+      "data": {
+        "containers": [
+          {
+            "name": "incidentlab-app-1",
+            "image": "incidentlab-app",
+            "state": "running",
+            "status": "Up 6 seconds"
+          },
+          {
+            "name": "incidentlab-db-1",
+            "image": "postgres:16",
+            "state": "paused",
+            "status": "Up 12 seconds (Paused)"
+          }
+        ]
+      }
+    },
+    "E2": {
+      "check": "app_health",
+      "arguments": "{}",
+      "data": {
+        "url": "http://localhost:8080/health",
+        "status_code": 503,
+        "body": "{\"status\":\"unhealthy\"}"
+      }
+    },
+    "E3": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":50}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "lines": [
+          "2026-10-28T23:37:58.465015961Z     await route.handle(scope, receive, send)",
+          "2026-10-28T23:37:58.465018294Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 1330, in handle",
+          "2026-10-28T23:37:58.465020669Z     await super().handle(scope, receive, send)",
+          "2026-10-28T23:37:58.465022836Z   File \"/usr/local/lib/python3.12/site-packages/starlette/routing.py\", line 289, in handle",
+          "2026-10-28T23:37:58.465025044Z     await self.app(scope, receive, send)",
+          "2026-10-28T23:37:58.465027127Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 166, in app",
+          "2026-10-28T23:37:58.465029336Z     await wrap_app_handling_exceptions(app, request)(scope, receive, send)",
+          "2026-10-28T23:37:58.465031586Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 53, in wrapped_app",
+          "2026-10-28T23:37:58.465033877Z     raise exc",
+          "2026-10-28T23:37:58.465035836Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 42, in wrapped_app",
+          "2026-10-28T23:37:58.465038794Z     await app(scope, receive, sender)",
+          "2026-10-28T23:37:58.465048294Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 152, in app",
+          "2026-10-28T23:37:58.465051044Z     response = await f(request)",
+          "2026-10-28T23:37:58.465053127Z                ^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465055211Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 745, in app",
+          "2026-10-28T23:37:58.465058294Z     raw_response = await run_endpoint_function(",
+          "2026-10-28T23:37:58.465060502Z                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465062586Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 374, in run_endpoint_function",
+          "2026-10-28T23:37:58.465064919Z     return await run_in_threadpool(",
+          "2026-10-28T23:37:58.465066919Z            ^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465069127Z   File \"/usr/local/lib/python3.12/site-packages/starlette/concurrency.py\", line 34, in run_in_threadpool",
+          "2026-10-28T23:37:58.465071419Z     return await anyio.to_thread.run_sync(func)",
+          "2026-10-28T23:37:58.465073544Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465075502Z   File \"/usr/local/lib/python3.12/site-packages/anyio/to_thread.py\", line 65, in run_sync",
+          "2026-10-28T23:37:58.465077794Z     return await get_async_backend().run_sync_in_worker_thread(",
+          "2026-10-28T23:37:58.465079877Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465081961Z   File \"/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py\", line 2706, in run_sync_in_worker_thread",
+          "2026-10-28T23:37:58.465084294Z     return await future",
+          "2026-10-28T23:37:58.465086294Z            ^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465088252Z   File \"/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py\", line 1100, in run",
+          "2026-10-28T23:37:58.465090502Z     result = context.run(func, *args)",
+          "2026-10-28T23:37:58.465092544Z              ^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465095502Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/telemetry/_api.py\", line 244, in _run_sync_endpoint",
+          "2026-10-28T23:37:58.465097752Z     return function(**arguments)",
+          "2026-10-28T23:37:58.465099836Z            ^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465101794Z   File \"/app/main.py\", line 65, in upload",
+          "2026-10-28T23:37:58.465103961Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-28T23:37:58.465106169Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:37:58.465108252Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-28T23:37:58.465110544Z     raise last_ex.with_traceback(None)",
+          "2026-10-28T23:37:58.465112586Z psycopg.errors.ConnectionTimeout: connection timeout expired",
+          "2026-10-28T23:38:02.968734142Z health check failed",
+          "2026-10-28T23:38:02.968860892Z Traceback (most recent call last):",
+          "2026-10-28T23:38:02.968869850Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-28T23:38:02.968875017Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-28T23:38:02.968879642Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T23:38:02.968883350Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-28T23:38:02.968888392Z     raise last_ex.with_traceback(None)",
+          "2026-10-28T23:38:02.968892350Z psycopg.errors.ConnectionTimeout: connection timeout expired",
+          "2026-10-28T23:38:02.969460058Z INFO:     172.18.0.1:33524 - \"GET /health HTTP/1.1\" 503 Service Unavailable"
+        ],
+        "older_lines_omitted": 0
+      }
+    },
+    "E4": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-db-1\"}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "status": "paused",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "unhealthy",
+        "restart_count": 0,
+        "started_at": "2026-10-28T23:37:48.537939874Z",
+        "finished_at": "0001-01-01T00:00:00Z",
+        "user": "(not set: runs as root)",
+        "mounts": [
+          {
+            "type": "volume",
+            "source": "/var/lib/docker/volumes/incidentlab_dbdata/_data",
+            "destination": "/var/lib/postgresql/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E5": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-db-1\",\"tail\":50}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "lines": [
+          "2026-10-28T23:37:48.605366582Z ",
+          "2026-10-28T23:37:48.605380124Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-28T23:37:48.605382082Z ",
+          "2026-10-28T23:37:48.613694577Z 2026-10-28 23:37:48.613 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-28T23:37:48.613777910Z 2026-10-28 23:37:48.613 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-28T23:37:48.613782244Z 2026-10-28 23:37:48.613 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-28T23:37:48.614374618Z 2026-10-28 23:37:48.614 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-28T23:37:48.615792951Z 2026-10-28 23:37:48.615 UTC [29] LOG:  database system was shut down at 2026-10-28 23:37:48 UTC",
+          "2026-10-28T23:37:48.617343367Z 2026-10-28 23:37:48.617 UTC [1] LOG:  database system is ready to accept connections"
+        ],
+        "older_lines_omitted": 0
+      }
+    },
+    "E6": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/srv/lab-data\"}",
+      "data": {
+        "path": "/srv/lab-data",
+        "mountpoint": "/srv/lab-data",
+        "size_mb": 487.2,
+        "used_mb": 40.7,
+        "available_mb": 410.7,
+        "use_percent": 9.0,
+        "inode_use_percent": 0.2
+      }
+    },
+    "E7": {
+      "check": "path_access",
+      "arguments": "{\"path\":\"/srv/lab-data/uploads\"}",
+      "data": {
+        "path": "/srv/lab-data/uploads",
+        "is_dir": true,
+        "owner_uid": 1000,
+        "owner_gid": 1000,
+        "mode": "0755",
+        "app_uid": 1000,
+        "app_gid": 1000,
+        "app_user_can_write": true,
+        "method": "owner and mode bits only; ignores ACLs and supplementary groups"
+      }
+    },
+    "E8": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-app-1\"}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "no healthcheck",
+        "restart_count": 0,
+        "started_at": "2026-10-28T23:37:54.117144892Z",
+        "finished_at": "0001-01-01T00:00:00Z",
+        "user": "1000:1000",
+        "mounts": [
+          {
+            "type": "bind",
+            "source": "/srv/lab-data",
+            "destination": "/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E9": {
+      "check": "recent_events",
+      "arguments": "{\"minutes\":120}",
+      "data": {
+        "minutes": 120,
+        "events": [
+          {
+            "time": "2026-10-28T23:36:52+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:36:52+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:36:57+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:36:57+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:36:57+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "eb06d7731043_incidentlab-db-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-db-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-db-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-db-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "320a034d2d82_incidentlab-app-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-app-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-app-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-app-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-app-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-app-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:00+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:05+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:05+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:06+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:06+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:06+00:00",
+            "container": "incidentlab-app-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:41+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:46+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:46+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:46+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:46+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "513e2ac9877b_incidentlab-db-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "aaf95772d005_incidentlab-app-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-app-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-app-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-app-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-app-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-app-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T23:37:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:54+00:00",
+            "container": "incidentlab-app-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T23:37:56+00:00",
+            "container": "incidentlab-db-1",
+            "action": "pause",
+            "exit_code": null
+          }
+        ]
+      }
+    }
+  },
+  "investigation_notes": "Upload failure investigated. App itself is not the root cause.\n\n**Evidence:**\n\n* App `incidentlab-app-1` is `running` `Up 6 seconds` (E1) , `running:true, exit_code:0, oom_killed:false, restart_count:0` (E8) with bind `source:/srv/lab-data destination:/data rw:true` (E8) as user `1000:1000` (E8).\n* But app `/health` is `503 {\"status\":\"unhealthy\"}` (E2).\n* App logs show upload failure and health failure both as `psycopg.errors.ConnectionTimeout: connection timeout expired` in `psycopg.connect(DATABASE_URL...)` at `/app/main.py line 65 upload` and `line 113 health` (E3). `health check failed` then `503` (E3).\n\n* Dependency `incidentlab-db-1` is `paused` `Up 12 seconds (Paused)` (E1), `status:paused, running:true` (E4).\n* `recent_events` shows `2026-10-28T23:37:56 container:incidentlab-db-1 action:pause` (E9) - last event. Timeouts in (E3) are `23:37:58` and `23:38:02`, after pause.\n* DB is otherwise intact: `exit_code:0, oom_killed:false, restart_count:0` (E4), logs `database system is ready to accept connections` (E5), with prior `health_status: healthy` at `23:37:53` (E9). Current `health:unhealthy` (E4) is expected while paused.\n* Ruled out storage:\n  * `/srv/lab-data` `use_percent:9.0, available_mb:410.7, inode_use_percent:0.2` (E6) - not full.\n  * `/srv/lab-data/uploads` `is_dir:true, app_user_can_write:true` owner `1000:1000` mode `0755` matching `app 1000:1000` (E7) - writable.\n\n**Conclusion:**\n\nRoot cause is dependency `incidentlab-db-1` paused (E1,E4,E9), not app disk/permission/crash.\n\nSymptoms are app `503 unhealthy` (E2) and `connection timeout expired` on upload and healthcheck (E3) because paused DB does not answer connections.\n",
+  "seconds": 25.4,
+  "usage": {
+    "requests": 5,
+    "input": 25822,
+    "cached": 7477,
+    "output": 5428
+  },
+  "cost_usd": 0.0471,
+  "last_response_id": "resp_6ae2876f7b48294941a84388"
+}
