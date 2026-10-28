@@ -1,30 +1,44 @@
 #!/usr/bin/env python3
-"""Predefined repairs and verifier for IncidentLab milestone 1.
+"""Predefined repairs and verifier for IncidentLab milestones 1-2.
 
-Step 3 only: restore_upload_dir_access plus the upload/read-back verifier.
-This module never learns which fault was injected: it must not import or
-call lab/faults.py. Repairs run through anonymous docker helper containers.
+restore_upload_dir_access, clear_stale_temp_files and restore_database
+plus the upload/read-back verifier. This module never learns which fault was
+injected: it must not import or call lab/faults.py. Repairs run through
+docker: anonymous helper containers for files, control commands for the db.
 
 Usage:
     python3 repair.py restore_upload_dir_access   # asks, applies, verifies
-    python3 repair.py restore_upload_dir_access --yes --no-verify  # apply only
+    python3 repair.py clear_stale_temp_files --yes   # apply without asking, then verify
+    python3 repair.py restore_database --yes      # apply without asking, then verify
     python3 repair.py verify                      # verifier only
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import secrets
+import stat
 import subprocess
 import sys
+import time
 
 DATA_MOUNT = os.environ.get("INCIDENTLAB_DATA_MOUNT", "/srv/lab-data")
 UPLOADS = "uploads"
+TMP = "tmp"
 APP_UID = int(os.environ.get("INCIDENTLAB_APP_UID", "1000"))
 APP_GID = int(os.environ.get("INCIDENTLAB_APP_GID", "1000"))
+APP = os.environ.get("INCIDENTLAB_APP", "incidentlab-app-1")
+DB = os.environ.get("INCIDENTLAB_DB", "incidentlab-db-1")
+
+STALE_SECONDS = 3600   # a .part file older than one hour is a stale orphan
+DB_READY_TIMEOUT = 90  # seconds to wait for the database to accept connections
+DB_POLL_SECONDS = 2
 
 REPAIR_NAME = "restore_upload_dir_access"
+REPAIR_TMP = "clear_stale_temp_files"
+REPAIR_DB = "restore_database"
 
 
 def _docker(*argv: str) -> str:
@@ -43,6 +57,34 @@ def _docker(*argv: str) -> str:
     return proc.stdout.strip()
 
 
+def _docker_cmd(*argv: str, timeout: int = 60) -> str:
+    """Run a docker control command on the host (start, unpause, network ...)."""
+    cmd = ["docker", *argv]
+    try:
+        proc = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, timeout=timeout,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("command not found: docker") from None
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()[-300:]
+        raise RuntimeError(f"docker failed (exit {proc.returncode}): {detail}")
+    return proc.stdout.strip()
+
+
+def _inspect_container(name: str) -> dict:
+    return json.loads(_docker_cmd("inspect", "--type", "container", name))[0]
+
+
+def _db_ready(data: dict) -> bool:
+    state = data.get("State") or {}
+    if not state.get("Running"):
+        return False
+    health = (state.get("Health") or {}).get("Status")
+    return health in (None, "healthy")   # no healthcheck: running is ready
+
+
 def restore_upload_dir_access() -> dict:
     """Owner 1000:1000, mode 755 on uploads/. Touches only that directory."""
     try:
@@ -54,7 +96,85 @@ def restore_upload_dir_access() -> dict:
             "detail": f"{UPLOADS}/ owner {APP_UID}:{APP_GID} mode 0755"}
 
 
-REPAIRS = {REPAIR_NAME: restore_upload_dir_access}
+def clear_stale_temp_files() -> dict:
+    """Delete .part files older than one hour in tmp/. Touches only those files."""
+    host_tmp = os.path.join(DATA_MOUNT, TMP)
+    try:
+        entries = os.listdir(host_tmp)
+    except FileNotFoundError:
+        return {"repair": REPAIR_TMP, "applied": True, "ok": True,
+                "detail": f"{TMP}/ not present, nothing to delete"}
+    except OSError as err:
+        return {"repair": REPAIR_TMP, "applied": True, "ok": False,
+                "detail": f"cannot list {TMP}/: {err}"}
+    now = time.time()
+    stale: list[str] = []
+    freed = 0
+    for entry in sorted(entries):
+        if not entry.endswith(".part"):
+            continue
+        try:
+            st = os.stat(os.path.join(host_tmp, entry))
+        except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            continue
+        if now - st.st_mtime <= STALE_SECONDS:
+            continue
+        stale.append(entry)
+        freed += st.st_size
+    if not stale:
+        return {"repair": REPAIR_TMP, "applied": True, "ok": True,
+                "detail": f"no stale .part files in {TMP}/, nothing to delete"}
+    try:
+        _docker("rm", "-f", *(f"/d/{TMP}/{name}" for name in stale))
+    except RuntimeError as err:
+        return {"repair": REPAIR_TMP, "applied": True, "ok": False, "detail": str(err)}
+    return {"repair": REPAIR_TMP, "applied": True, "ok": True,
+            "detail": f"deleted {len(stale)} stale .part file(s), freed {freed / 2 ** 20:.1f} MB"}
+
+
+def restore_database() -> dict:
+    """Start, unpause or reconnect the db as needed, then wait until ready.
+
+    Touches only the db container. The app needs no restart: it opens a
+    fresh database connection per request.
+    """
+    actions: list[str] = []
+    try:
+        state = (_inspect_container(DB).get("State") or {})
+        if state.get("Paused"):
+            _docker_cmd("unpause", DB)
+            actions.append("unpaused")
+        if not state.get("Running"):
+            _docker_cmd("start", DB)
+            actions.append("started")
+        app_networks = set(((_inspect_container(APP).get("NetworkSettings") or {})
+                            .get("Networks") or {}))
+        db_networks = set(((_inspect_container(DB).get("NetworkSettings") or {})
+                           .get("Networks") or {}))
+        for network in sorted(app_networks - db_networks):
+            _docker_cmd("network", "connect", network, DB)
+            actions.append(f"connected to {network}")
+        deadline = time.monotonic() + DB_READY_TIMEOUT
+        while True:
+            if _db_ready(_inspect_container(DB)):
+                break
+            if time.monotonic() >= deadline:
+                return {"repair": REPAIR_DB, "applied": True, "ok": False,
+                        "detail": f"{DB} did not become healthy within {DB_READY_TIMEOUT}s"}
+            time.sleep(DB_POLL_SECONDS)
+    except RuntimeError as err:
+        return {"repair": REPAIR_DB, "applied": True, "ok": False, "detail": str(err)}
+    if actions:
+        detail = f"{DB}: {', '.join(actions)}; healthy"
+    else:
+        detail = f"{DB} already running and healthy"
+    return {"repair": REPAIR_DB, "applied": True, "ok": True, "detail": detail}
+
+
+REPAIRS = {REPAIR_NAME: restore_upload_dir_access, REPAIR_TMP: clear_stale_temp_files,
+           REPAIR_DB: restore_database}
 
 
 def ask_approval(repair_name: str, cause: str | None = None) -> bool:
@@ -97,7 +217,7 @@ def verify_recovery() -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one predefined repair and verify recovery.")
-    parser.add_argument("repair", choices=[REPAIR_NAME, "verify"],
+    parser.add_argument("repair", choices=[REPAIR_NAME, REPAIR_TMP, REPAIR_DB, "verify"],
                         help="repair to apply, or 'verify' to run the verifier only")
     parser.add_argument("--yes", action="store_true", help="apply without asking (testing and eval runs)")
     parser.add_argument("--no-verify", action="store_true", help="skip the verifier after the repair")
