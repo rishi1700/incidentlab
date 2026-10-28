@@ -37,6 +37,12 @@ def get_file(file_id: str) -> bytes:
         return resp.read()
 
 
+def delete_file(file_id: str) -> dict:
+    req = urllib.request.Request(f"{APP_URL}/files/{file_id}", method="DELETE")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp)
+
+
 def main() -> int:
     payload = secrets.token_bytes(SIZE)
     sent_hash = hashlib.sha256(payload).hexdigest()
@@ -62,6 +68,12 @@ def main() -> int:
         print("MISMATCH: downloaded hash != uploaded hash")
         return 1
     print("OK: upload/download SHA-256 hashes match")
+    try:
+        delete_file(file_id)
+    except Exception as err:
+        print(f"WARNING: cleanup delete failed: {type(err).__name__}: {err}")
+    else:
+        print(f"deleted test file id={file_id}")
     return 0
 
 

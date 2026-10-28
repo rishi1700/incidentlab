@@ -1,0 +1,1176 @@
+{
+  "symptom": "Uploads have stopped working. Find out what is happening.",
+  "model": "muse-spark-1.3",
+  "effort": "medium",
+  "unavailable_checks": [],
+  "report": {
+    "cause": "healthy",
+    "findings": [
+      {
+        "citation": {
+          "evidence_id": "E2",
+          "field": "body",
+          "value": "{\"status\":\"ok\"}"
+        },
+        "claim": "App health endpoint currently returns ok with status 200"
+      },
+      {
+        "citation": {
+          "evidence_id": "E11",
+          "field": "lines",
+          "value": "2026-10-28T16:57:23.568500569Z INFO:     172.18.0.1:58380 - \"POST /upload HTTP/1.1\" 200 OK"
+        },
+        "claim": "Most recent upload succeeded with HTTP 200"
+      },
+      {
+        "citation": {
+          "evidence_id": "E11",
+          "field": "lines",
+          "value": "2026-10-28T16:59:26.587105893Z INFO:     172.18.0.1:47196 - \"GET /health HTTP/1.1\" 200 OK"
+        },
+        "claim": "Most recent health check succeeded with HTTP 200"
+      },
+      {
+        "citation": {
+          "evidence_id": "E6",
+          "field": "available_mb",
+          "value": "415.2"
+        },
+        "claim": "Upload filesystem has ample free space"
+      },
+      {
+        "citation": {
+          "evidence_id": "E7",
+          "field": "app_user_can_write",
+          "value": "true"
+        },
+        "claim": "Upload directory is writable by the app user"
+      },
+      {
+        "citation": {
+          "evidence_id": "E8",
+          "field": "health",
+          "value": "healthy"
+        },
+        "claim": "Database container is currently healthy"
+      }
+    ],
+    "open_questions": [
+      "Why did an OSError No space left on device occur at 16:46:12 despite current free space?",
+      "What caused repeated database fast shutdown requests and the temporary name resolution failure for host db at 16:52:23?"
+    ],
+    "ruled_out": [
+      {
+        "cause": "volume_full",
+        "citation": {
+          "evidence_id": "E6",
+          "field": "use_percent",
+          "value": "8.0"
+        },
+        "reason": "Current use is only 8% with 415MB available, so volume is not full now"
+      },
+      {
+        "cause": "upload_dir_not_writable",
+        "citation": {
+          "evidence_id": "E7",
+          "field": "app_user_can_write",
+          "value": "true"
+        },
+        "reason": "Upload directory is owned correctly and writable by app UID 1000"
+      },
+      {
+        "cause": "database_unavailable",
+        "citation": {
+          "evidence_id": "E8",
+          "field": "health",
+          "value": "healthy"
+        },
+        "reason": "Database is running and healthy now and app health check passes, prior outage resolved"
+      }
+    ],
+    "summary": "Uploads and health checks are succeeding now. Past failures for disk write and database name resolution are visible in logs but current evidence shows free space, writable directory, and healthy database."
+  },
+  "validation": {
+    "citations": [
+      {
+        "kind": "finding",
+        "text": "App health endpoint currently returns ok with status 200",
+        "supported": true,
+        "detail": "E2.body matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Most recent upload succeeded with HTTP 200",
+        "supported": true,
+        "detail": "E11.lines matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Most recent health check succeeded with HTTP 200",
+        "supported": true,
+        "detail": "E11.lines matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Upload filesystem has ample free space",
+        "supported": true,
+        "detail": "E6.available_mb matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Upload directory is writable by the app user",
+        "supported": true,
+        "detail": "E7.app_user_can_write matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Database container is currently healthy",
+        "supported": true,
+        "detail": "E8.health matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "volume_full: Current use is only 8% with 415MB available, so volume is not full now",
+        "supported": true,
+        "detail": "E6.use_percent matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "upload_dir_not_writable: Upload directory is owned correctly and writable by app UID 1000",
+        "supported": true,
+        "detail": "E7.app_user_can_write matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "database_unavailable: Database is running and healthy now and app health check passes, prior outage resolved",
+        "supported": true,
+        "detail": "E8.health matches"
+      }
+    ],
+    "supported": 9,
+    "total": 9,
+    "warnings": []
+  },
+  "repair": null,
+  "repair_result": null,
+  "verification": null,
+  "evidence": {
+    "E1": {
+      "check": "list_containers",
+      "arguments": "{}",
+      "data": {
+        "containers": [
+          {
+            "name": "incidentlab-app-1",
+            "image": "incidentlab-app",
+            "state": "running",
+            "status": "Up 24 minutes"
+          },
+          {
+            "name": "incidentlab-db-1",
+            "image": "postgres:16",
+            "state": "running",
+            "status": "Up 2 minutes (healthy)"
+          }
+        ]
+      }
+    },
+    "E2": {
+      "check": "app_health",
+      "arguments": "{}",
+      "data": {
+        "url": "http://localhost:8080/health",
+        "status_code": 200,
+        "body": "{\"status\":\"ok\"}"
+      }
+    },
+    "E3": {
+      "check": "recent_events",
+      "arguments": "{\"minutes\":60}",
+      "data": {
+        "minutes": 60,
+        "events": [
+          {
+            "time": "2026-10-28T16:58:02+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:02+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:07+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:07+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:07+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:12+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:12+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:58:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:58:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:03+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:03+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:03+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          }
+        ]
+      }
+    },
+    "E4": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-app-1\"}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "no healthcheck",
+        "restart_count": 0,
+        "started_at": "2026-10-28T16:35:11.423321029Z",
+        "finished_at": "0001-01-01T00:00:00Z",
+        "user": "1000:1000",
+        "mounts": [
+          {
+            "type": "bind",
+            "source": "/srv/lab-data",
+            "destination": "/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E5": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":100}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "lines": [
+          "2026-10-28T16:46:12.699453699Z   File \"/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py\", line 411, in run_asgi",
+          "2026-10-28T16:46:12.699455157Z     result = await app(  # type: ignore[func-returns-value]",
+          "2026-10-28T16:46:12.699456824Z              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699457866Z   File \"/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py\", line 63, in __call__",
+          "2026-10-28T16:46:12.699458949Z     return await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699459949Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699460907Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/applications.py\", line 1194, in __call__",
+          "2026-10-28T16:46:12.699461991Z     await super().__call__(scope, receive, send)",
+          "2026-10-28T16:46:12.699462949Z   File \"/usr/local/lib/python3.12/site-packages/starlette/applications.py\", line 96, in __call__",
+          "2026-10-28T16:46:12.699463991Z     await self.middleware_stack(scope, receive, send)",
+          "2026-10-28T16:46:12.699464991Z   File \"/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py\", line 186, in __call__",
+          "2026-10-28T16:46:12.699466032Z     raise exc",
+          "2026-10-28T16:46:12.699467032Z   File \"/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py\", line 164, in __call__",
+          "2026-10-28T16:46:12.699468199Z     await self.app(scope, receive, _send)",
+          "2026-10-28T16:46:12.699469157Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/telemetry/_asgi.py\", line 151, in __call__",
+          "2026-10-28T16:46:12.699470116Z     await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699471074Z   File \"/usr/local/lib/python3.12/site-packages/starlette/middleware/exceptions.py\", line 63, in __call__",
+          "2026-10-28T16:46:12.699472241Z     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)",
+          "2026-10-28T16:46:12.699479866Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 53, in wrapped_app",
+          "2026-10-28T16:46:12.699480991Z     raise exc",
+          "2026-10-28T16:46:12.699481782Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 42, in wrapped_app",
+          "2026-10-28T16:46:12.699482949Z     await app(scope, receive, sender)",
+          "2026-10-28T16:46:12.699483741Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py\", line 18, in __call__",
+          "2026-10-28T16:46:12.699484616Z     await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699485407Z   File \"/usr/local/lib/python3.12/site-packages/starlette/routing.py\", line 683, in __call__",
+          "2026-10-28T16:46:12.699486282Z     await self.middleware_stack(scope, receive, send)",
+          "2026-10-28T16:46:12.699487074Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 2811, in app",
+          "2026-10-28T16:46:12.699488282Z     await route.handle(scope, receive, send)",
+          "2026-10-28T16:46:12.699489116Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 1330, in handle",
+          "2026-10-28T16:46:12.699489949Z     await super().handle(scope, receive, send)",
+          "2026-10-28T16:46:12.699490699Z   File \"/usr/local/lib/python3.12/site-packages/starlette/routing.py\", line 289, in handle",
+          "2026-10-28T16:46:12.699491532Z     await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699492407Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 166, in app",
+          "2026-10-28T16:46:12.699493199Z     await wrap_app_handling_exceptions(app, request)(scope, receive, send)",
+          "2026-10-28T16:46:12.699493991Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 53, in wrapped_app",
+          "2026-10-28T16:46:12.699494824Z     raise exc",
+          "2026-10-28T16:46:12.699495574Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 42, in wrapped_app",
+          "2026-10-28T16:46:12.699496532Z     await app(scope, receive, sender)",
+          "2026-10-28T16:46:12.699497366Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 152, in app",
+          "2026-10-28T16:46:12.699498199Z     response = await f(request)",
+          "2026-10-28T16:46:12.699498949Z                ^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699499657Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 745, in app",
+          "2026-10-28T16:46:12.699500449Z     raw_response = await run_endpoint_function(",
+          "2026-10-28T16:46:12.699501241Z                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699501991Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 374, in run_endpoint_function",
+          "2026-10-28T16:46:12.699502866Z     return await run_in_threadpool(",
+          "2026-10-28T16:46:12.699503616Z            ^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699504366Z   File \"/usr/local/lib/python3.12/site-packages/starlette/concurrency.py\", line 34, in run_in_threadpool",
+          "2026-10-28T16:46:12.699506657Z     return await anyio.to_thread.run_sync(func)",
+          "2026-10-28T16:46:12.699507449Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699508449Z   File \"/usr/local/lib/python3.12/site-packages/anyio/to_thread.py\", line 65, in run_sync",
+          "2026-10-28T16:46:12.699509324Z     return await get_async_backend().run_sync_in_worker_thread(",
+          "2026-10-28T16:46:12.699510116Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699510907Z   File \"/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py\", line 2706, in run_sync_in_worker_thread",
+          "2026-10-28T16:46:12.699511741Z     return await future",
+          "2026-10-28T16:46:12.699512491Z            ^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699513199Z   File \"/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py\", line 1100, in run",
+          "2026-10-28T16:46:12.699514032Z     result = context.run(func, *args)",
+          "2026-10-28T16:46:12.699514782Z              ^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699515699Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/telemetry/_api.py\", line 244, in _run_sync_endpoint",
+          "2026-10-28T16:46:12.699516699Z     return function(**arguments)",
+          "2026-10-28T16:46:12.699517449Z            ^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699518116Z   File \"/app/main.py\", line 58, in upload",
+          "2026-10-28T16:46:12.699518907Z     out.write(chunk)",
+          "2026-10-28T16:46:12.699519657Z OSError: [Errno 28] No space left on device",
+          "2026-10-28T16:46:12.947448870Z INFO:     172.18.0.1:42328 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-28T16:46:12.951991909Z INFO:     172.18.0.1:42330 - \"GET /files/b0fc51d57b2c3c0137069b58cbebb0af HTTP/1.1\" 200 OK",
+          "2026-10-28T16:52:20.556263195Z INFO:     172.18.0.1:41168 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-28T16:52:20.561120947Z INFO:     172.18.0.1:41184 - \"GET /files/bd2d4d7828e7f1e3b3c6c7f15f3559f8 HTTP/1.1\" 200 OK",
+          "2026-10-28T16:52:23.539961059Z health check failed",
+          "2026-10-28T16:52:23.539984642Z Traceback (most recent call last):",
+          "2026-10-28T16:52:23.539986726Z   File \"/app/main.py\", line 98, in health",
+          "2026-10-28T16:52:23.539988226Z     with psycopg.connect(DATABASE_URL) as conn:",
+          "2026-10-28T16:52:23.539989309Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:52:23.539990434Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 100, in connect",
+          "2026-10-28T16:52:23.539991559Z     attempts = conninfo_attempts(params)",
+          "2026-10-28T16:52:23.539992642Z                ^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:52:23.539993976Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/_conninfo_attempts.py\", line 55, in conninfo_attempts",
+          "2026-10-28T16:52:23.539995101Z     raise last_exc",
+          "2026-10-28T16:52:23.539996101Z psycopg.OperationalError: failed to resolve host 'db': [Errno -3] Temporary failure in name resolution",
+          "2026-10-28T16:52:23.540114726Z INFO:     172.18.0.1:41190 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-28T16:57:23.568500569Z INFO:     172.18.0.1:58380 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-28T16:57:23.574801823Z INFO:     172.18.0.1:58390 - \"GET /files/ef770be617b3eba120998b6abaaf7e81 HTTP/1.1\" 200 OK",
+          "2026-10-28T16:59:26.587105893Z INFO:     172.18.0.1:47196 - \"GET /health HTTP/1.1\" 200 OK"
+        ],
+        "older_lines_omitted": 16
+      }
+    },
+    "E6": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/srv/lab-data\"}",
+      "data": {
+        "path": "/srv/lab-data",
+        "mountpoint": "/srv/lab-data",
+        "size_mb": 487.2,
+        "used_mb": 36.2,
+        "available_mb": 415.2,
+        "use_percent": 8.0,
+        "inode_use_percent": 0.2
+      }
+    },
+    "E7": {
+      "check": "path_access",
+      "arguments": "{\"path\":\"/srv/lab-data/uploads\"}",
+      "data": {
+        "path": "/srv/lab-data/uploads",
+        "is_dir": true,
+        "owner_uid": 1000,
+        "owner_gid": 1000,
+        "mode": "0755",
+        "app_uid": 1000,
+        "app_gid": 1000,
+        "app_user_can_write": true,
+        "method": "owner and mode bits only; ignores ACLs and supplementary groups"
+      }
+    },
+    "E8": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-db-1\"}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "healthy",
+        "restart_count": 0,
+        "started_at": "2026-10-28T16:57:17.361467317Z",
+        "finished_at": "2026-10-28T16:52:20.590421414Z",
+        "user": "(not set: runs as root)",
+        "mounts": [
+          {
+            "type": "volume",
+            "source": "/var/lib/docker/volumes/incidentlab_dbdata/_data",
+            "destination": "/var/lib/postgresql/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E9": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-db-1\",\"tail\":100}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "lines": [
+          "2026-10-28T16:43:58.756828476Z 2026-10-28 16:43:58.755 UTC [1] LOG:  aborting any active transactions",
+          "2026-10-28T16:43:58.756873726Z 2026-10-28 16:43:58.756 UTC [1] LOG:  background worker \"logical replication launcher\" (PID 32) exited with exit code 1",
+          "2026-10-28T16:43:58.757219476Z 2026-10-28 16:43:58.757 UTC [27] LOG:  shutting down",
+          "2026-10-28T16:43:58.757498518Z 2026-10-28 16:43:58.757 UTC [27] LOG:  checkpoint starting: shutdown immediate",
+          "2026-10-28T16:43:58.759360769Z 2026-10-28 16:43:58.759 UTC [27] LOG:  checkpoint complete: wrote 5 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=4, longest=0.001 s, average=0.001 s; distance=4 kB, estimate=4 kB; lsn=0/1991660, redo",
+          "2026-10-28T16:43:58.760616728Z 2026-10-28 16:43:58.760 UTC [1] LOG:  database system is shut down",
+          "2026-10-28T16:43:58.992073697Z ",
+          "2026-10-28T16:43:58.992083655Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-28T16:43:58.992085613Z ",
+          "2026-10-28T16:43:59.002497078Z 2026-10-28 16:43:59.002 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-28T16:43:59.002601744Z 2026-10-28 16:43:59.002 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-28T16:43:59.002606119Z 2026-10-28 16:43:59.002 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-28T16:43:59.004032620Z 2026-10-28 16:43:59.003 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-28T16:43:59.005932830Z 2026-10-28 16:43:59.005 UTC [30] LOG:  database system was shut down at 2026-10-28 16:43:58 UTC",
+          "2026-10-28T16:43:59.007394039Z 2026-10-28 16:43:59.007 UTC [1] LOG:  database system is ready to accept connections",
+          "2026-10-28T16:44:05.314376723Z 2026-10-28 16:44:05.314 UTC [1] LOG:  received fast shutdown request",
+          "2026-10-28T16:44:05.314811057Z 2026-10-28 16:44:05.314 UTC [1] LOG:  aborting any active transactions",
+          "2026-10-28T16:44:05.315780224Z 2026-10-28 16:44:05.315 UTC [1] LOG:  background worker \"logical replication launcher\" (PID 33) exited with exit code 1",
+          "2026-10-28T16:44:05.316691849Z 2026-10-28 16:44:05.316 UTC [28] LOG:  shutting down",
+          "2026-10-28T16:44:05.317066600Z 2026-10-28 16:44:05.317 UTC [28] LOG:  checkpoint starting: shutdown immediate",
+          "2026-10-28T16:44:05.319025142Z 2026-10-28 16:44:05.318 UTC [28] LOG:  checkpoint complete: wrote 5 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=4, longest=0.001 s, average=0.001 s; distance=5 kB, estimate=5 kB; lsn=0/1992AE0, redo",
+          "2026-10-28T16:44:05.320482602Z 2026-10-28 16:44:05.320 UTC [1] LOG:  database system is shut down",
+          "2026-10-28T16:44:05.538768104Z ",
+          "2026-10-28T16:44:05.538779479Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-28T16:44:05.538781479Z ",
+          "2026-10-28T16:44:05.548288443Z 2026-10-28 16:44:05.548 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-28T16:44:05.548392943Z 2026-10-28 16:44:05.548 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-28T16:44:05.548399026Z 2026-10-28 16:44:05.548 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-28T16:44:05.549214985Z 2026-10-28 16:44:05.549 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-28T16:44:05.551741612Z 2026-10-28 16:44:05.551 UTC [29] LOG:  database system was shut down at 2026-10-28 16:44:05 UTC",
+          "2026-10-28T16:44:05.554017071Z 2026-10-28 16:44:05.553 UTC [1] LOG:  database system is ready to accept connections",
+          "2026-10-28T16:44:11.850175765Z 2026-10-28 16:44:11.850 UTC [1] LOG:  received fast shutdown request",
+          "2026-10-28T16:44:11.850764597Z 2026-10-28 16:44:11.850 UTC [1] LOG:  aborting any active transactions",
+          "2026-10-28T16:44:11.852091471Z 2026-10-28 16:44:11.852 UTC [1] LOG:  background worker \"logical replication launcher\" (PID 32) exited with exit code 1",
+          "2026-10-28T16:44:11.852127638Z 2026-10-28 16:44:11.852 UTC [27] LOG:  shutting down",
+          "2026-10-28T16:44:11.852403138Z 2026-10-28 16:44:11.852 UTC [27] LOG:  checkpoint starting: shutdown immediate",
+          "2026-10-28T16:44:11.854325303Z 2026-10-28 16:44:11.854 UTC [27] LOG:  checkpoint complete: wrote 5 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=4, longest=0.001 s, average=0.001 s; distance=5 kB, estimate=5 kB; lsn=0/1994100, redo",
+          "2026-10-28T16:44:11.855678885Z 2026-10-28 16:44:11.855 UTC [1] LOG:  database system is shut down",
+          "2026-10-28T16:44:12.136684944Z ",
+          "2026-10-28T16:44:12.136704694Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-28T16:44:12.136707611Z ",
+          "2026-10-28T16:44:12.145985478Z 2026-10-28 16:44:12.145 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-28T16:44:12.146008228Z 2026-10-28 16:44:12.145 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-28T16:44:12.146037686Z 2026-10-28 16:44:12.146 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-28T16:44:12.148166393Z 2026-10-28 16:44:12.146 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-28T16:44:12.148457184Z 2026-10-28 16:44:12.148 UTC [30] LOG:  database system was shut down at 2026-10-28 16:44:11 UTC",
+          "2026-10-28T16:44:12.150161100Z 2026-10-28 16:44:12.150 UTC [1] LOG:  database system is ready to accept connections",
+          "2026-10-28T16:49:12.251736159Z 2026-10-28 16:49:12.251 UTC [28] LOG:  checkpoint starting: time",
+          "2026-10-28T16:49:12.471145221Z 2026-10-28 16:49:12.470 UTC [28] LOG:  checkpoint complete: wrote 5 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.209 s, sync=0.005 s, total=0.221 s; sync files=4, longest=0.002 s, average=0.002 s; distance=8 kB, estimate=8 kB; lsn=0/1996298, redo",
+          "2026-10-28T16:52:20.582489078Z 2026-10-28 16:52:20.582 UTC [1] LOG:  received fast shutdown request",
+          "2026-10-28T16:52:20.583069620Z 2026-10-28 16:52:20.583 UTC [1] LOG:  aborting any active transactions",
+          "2026-10-28T16:52:20.584602954Z 2026-10-28 16:52:20.584 UTC [1] LOG:  background worker \"logical replication launcher\" (PID 33) exited with exit code 1",
+          "2026-10-28T16:52:20.584656829Z 2026-10-28 16:52:20.584 UTC [28] LOG:  shutting down",
+          "2026-10-28T16:52:20.584962120Z 2026-10-28 16:52:20.584 UTC [28] LOG:  checkpoint starting: shutdown immediate",
+          "2026-10-28T16:52:20.586564954Z 2026-10-28 16:52:20.586 UTC [28] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.002 s; sync files=3, longest=0.001 s, average=0.001 s; distance=7 kB, estimate=8 kB; lsn=0/19980B0, redo",
+          "2026-10-28T16:52:20.588105538Z 2026-10-28 16:52:20.588 UTC [1] LOG:  database system is shut down",
+          "2026-10-28T16:57:17.441483319Z ",
+          "2026-10-28T16:57:17.441521903Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-28T16:57:17.441525194Z ",
+          "2026-10-28T16:57:17.458919871Z 2026-10-28 16:57:17.458 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-28T16:57:17.459054496Z 2026-10-28 16:57:17.459 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-28T16:57:17.459058579Z 2026-10-28 16:57:17.459 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-28T16:57:17.459793038Z 2026-10-28 16:57:17.459 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-28T16:57:17.462085914Z 2026-10-28 16:57:17.462 UTC [28] LOG:  database system was shut down at 2026-10-28 16:52:20 UTC",
+          "2026-10-28T16:57:17.464049332Z 2026-10-28 16:57:17.464 UTC [1] LOG:  database system is ready to accept connections"
+        ],
+        "older_lines_omitted": 28
+      }
+    },
+    "E10": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/\"}",
+      "data": {
+        "path": "/",
+        "mountpoint": "/",
+        "size_mb": 98121.7,
+        "used_mb": 6255.6,
+        "available_mb": 91850.1,
+        "use_percent": 6.4,
+        "inode_use_percent": 1.4
+      }
+    },
+    "E11": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":200}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "lines": [
+          "2026-10-28T16:46:12.699453699Z   File \"/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py\", line 411, in run_asgi",
+          "2026-10-28T16:46:12.699455157Z     result = await app(  # type: ignore[func-returns-value]",
+          "2026-10-28T16:46:12.699456824Z              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699457866Z   File \"/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py\", line 63, in __call__",
+          "2026-10-28T16:46:12.699458949Z     return await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699459949Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699460907Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/applications.py\", line 1194, in __call__",
+          "2026-10-28T16:46:12.699461991Z     await super().__call__(scope, receive, send)",
+          "2026-10-28T16:46:12.699462949Z   File \"/usr/local/lib/python3.12/site-packages/starlette/applications.py\", line 96, in __call__",
+          "2026-10-28T16:46:12.699463991Z     await self.middleware_stack(scope, receive, send)",
+          "2026-10-28T16:46:12.699464991Z   File \"/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py\", line 186, in __call__",
+          "2026-10-28T16:46:12.699466032Z     raise exc",
+          "2026-10-28T16:46:12.699467032Z   File \"/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py\", line 164, in __call__",
+          "2026-10-28T16:46:12.699468199Z     await self.app(scope, receive, _send)",
+          "2026-10-28T16:46:12.699469157Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/telemetry/_asgi.py\", line 151, in __call__",
+          "2026-10-28T16:46:12.699470116Z     await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699471074Z   File \"/usr/local/lib/python3.12/site-packages/starlette/middleware/exceptions.py\", line 63, in __call__",
+          "2026-10-28T16:46:12.699472241Z     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)",
+          "2026-10-28T16:46:12.699479866Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 53, in wrapped_app",
+          "2026-10-28T16:46:12.699480991Z     raise exc",
+          "2026-10-28T16:46:12.699481782Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 42, in wrapped_app",
+          "2026-10-28T16:46:12.699482949Z     await app(scope, receive, sender)",
+          "2026-10-28T16:46:12.699483741Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py\", line 18, in __call__",
+          "2026-10-28T16:46:12.699484616Z     await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699485407Z   File \"/usr/local/lib/python3.12/site-packages/starlette/routing.py\", line 683, in __call__",
+          "2026-10-28T16:46:12.699486282Z     await self.middleware_stack(scope, receive, send)",
+          "2026-10-28T16:46:12.699487074Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 2811, in app",
+          "2026-10-28T16:46:12.699488282Z     await route.handle(scope, receive, send)",
+          "2026-10-28T16:46:12.699489116Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 1330, in handle",
+          "2026-10-28T16:46:12.699489949Z     await super().handle(scope, receive, send)",
+          "2026-10-28T16:46:12.699490699Z   File \"/usr/local/lib/python3.12/site-packages/starlette/routing.py\", line 289, in handle",
+          "2026-10-28T16:46:12.699491532Z     await self.app(scope, receive, send)",
+          "2026-10-28T16:46:12.699492407Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 166, in app",
+          "2026-10-28T16:46:12.699493199Z     await wrap_app_handling_exceptions(app, request)(scope, receive, send)",
+          "2026-10-28T16:46:12.699493991Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 53, in wrapped_app",
+          "2026-10-28T16:46:12.699494824Z     raise exc",
+          "2026-10-28T16:46:12.699495574Z   File \"/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py\", line 42, in wrapped_app",
+          "2026-10-28T16:46:12.699496532Z     await app(scope, receive, sender)",
+          "2026-10-28T16:46:12.699497366Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 152, in app",
+          "2026-10-28T16:46:12.699498199Z     response = await f(request)",
+          "2026-10-28T16:46:12.699498949Z                ^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699499657Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 745, in app",
+          "2026-10-28T16:46:12.699500449Z     raw_response = await run_endpoint_function(",
+          "2026-10-28T16:46:12.699501241Z                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699501991Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/routing.py\", line 374, in run_endpoint_function",
+          "2026-10-28T16:46:12.699502866Z     return await run_in_threadpool(",
+          "2026-10-28T16:46:12.699503616Z            ^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699504366Z   File \"/usr/local/lib/python3.12/site-packages/starlette/concurrency.py\", line 34, in run_in_threadpool",
+          "2026-10-28T16:46:12.699506657Z     return await anyio.to_thread.run_sync(func)",
+          "2026-10-28T16:46:12.699507449Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699508449Z   File \"/usr/local/lib/python3.12/site-packages/anyio/to_thread.py\", line 65, in run_sync",
+          "2026-10-28T16:46:12.699509324Z     return await get_async_backend().run_sync_in_worker_thread(",
+          "2026-10-28T16:46:12.699510116Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699510907Z   File \"/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py\", line 2706, in run_sync_in_worker_thread",
+          "2026-10-28T16:46:12.699511741Z     return await future",
+          "2026-10-28T16:46:12.699512491Z            ^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699513199Z   File \"/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py\", line 1100, in run",
+          "2026-10-28T16:46:12.699514032Z     result = context.run(func, *args)",
+          "2026-10-28T16:46:12.699514782Z              ^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699515699Z   File \"/usr/local/lib/python3.12/site-packages/fastapi/telemetry/_api.py\", line 244, in _run_sync_endpoint",
+          "2026-10-28T16:46:12.699516699Z     return function(**arguments)",
+          "2026-10-28T16:46:12.699517449Z            ^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:46:12.699518116Z   File \"/app/main.py\", line 58, in upload",
+          "2026-10-28T16:46:12.699518907Z     out.write(chunk)",
+          "2026-10-28T16:46:12.699519657Z OSError: [Errno 28] No space left on device",
+          "2026-10-28T16:46:12.947448870Z INFO:     172.18.0.1:42328 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-28T16:46:12.951991909Z INFO:     172.18.0.1:42330 - \"GET /files/b0fc51d57b2c3c0137069b58cbebb0af HTTP/1.1\" 200 OK",
+          "2026-10-28T16:52:20.556263195Z INFO:     172.18.0.1:41168 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-28T16:52:20.561120947Z INFO:     172.18.0.1:41184 - \"GET /files/bd2d4d7828e7f1e3b3c6c7f15f3559f8 HTTP/1.1\" 200 OK",
+          "2026-10-28T16:52:23.539961059Z health check failed",
+          "2026-10-28T16:52:23.539984642Z Traceback (most recent call last):",
+          "2026-10-28T16:52:23.539986726Z   File \"/app/main.py\", line 98, in health",
+          "2026-10-28T16:52:23.539988226Z     with psycopg.connect(DATABASE_URL) as conn:",
+          "2026-10-28T16:52:23.539989309Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:52:23.539990434Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 100, in connect",
+          "2026-10-28T16:52:23.539991559Z     attempts = conninfo_attempts(params)",
+          "2026-10-28T16:52:23.539992642Z                ^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-28T16:52:23.539993976Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/_conninfo_attempts.py\", line 55, in conninfo_attempts",
+          "2026-10-28T16:52:23.539995101Z     raise last_exc",
+          "2026-10-28T16:52:23.539996101Z psycopg.OperationalError: failed to resolve host 'db': [Errno -3] Temporary failure in name resolution",
+          "2026-10-28T16:52:23.540114726Z INFO:     172.18.0.1:41190 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-28T16:57:23.568500569Z INFO:     172.18.0.1:58380 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-28T16:57:23.574801823Z INFO:     172.18.0.1:58390 - \"GET /files/ef770be617b3eba120998b6abaaf7e81 HTTP/1.1\" 200 OK",
+          "2026-10-28T16:59:26.587105893Z INFO:     172.18.0.1:47196 - \"GET /health HTTP/1.1\" 200 OK"
+        ],
+        "older_lines_omitted": 116
+      }
+    },
+    "E12": {
+      "check": "recent_events",
+      "arguments": "{\"minutes\":120}",
+      "data": {
+        "minutes": 120,
+        "events": [
+          {
+            "time": "2026-10-28T16:59:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:08+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:48+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T16:59:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T16:59:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T17:00:03+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:03+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:03+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T17:00:09+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:09+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:09+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T17:00:14+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:14+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:14+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T17:00:19+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:19+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:19+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T17:00:24+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:24+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:24+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-28T17:00:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-28T17:00:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          }
+        ]
+      }
+    }
+  },
+  "investigation_notes": "Current state: **healthy - no ongoing cause for upload failure found**\n\nEvidence:\n\n- Both containers `running`: app `Up 24 minutes`, db `Up 2 minutes (healthy)` (E1).\n- App details: `running:true, exit_code:0, oom_killed:false, restart_count:0`, started `2026-10-28T16:35:11Z` (E4).\n- DB details: `running:true, exit_code:0, oom_killed:false, health:healthy`, started `2026-10-28T16:57:17Z` (E8).\n- `/health` now `200 {\"status\":\"ok\"}` (E2) and log `GET /health 200 OK` at `16:59:26` (E11).\n- Most recent upload in logs succeeded: `POST /upload 200 OK` at `16:57:23` + `GET /files/ef77... 200 OK` (E11). Earlier upload at `16:52:20 POST /upload 200 OK` + `GET /files/bd2d... 200 OK` also succeeded (E5, E11).\n- Storage for uploads present: bind `source:/srv/lab-data destination:/data rw:true` (E4), on same network `incidentlab_default` for both app (E4) and db (E8).\n- Space is available now: `/srv/lab-data 8.0% used, 415.2 MB available, inode 0.2%` (E6) and `/ 6.4% used, inode 1.4%` (E10).\n- Upload directory writable by app user: `owner 1000:1000 mode 0755, app_uid 1000, app_user_can_write:true` (E7).\n\nHistorical failures seen in logs, both now resolved:\n\n- `16:46:12 File \"/app/main.py\", line 58, in upload out.write(chunk) OSError: [Errno 28] No space left on device` (E5, E11). Ruled out as ongoing by current space (E6, E10).\n- `16:52:23 health check failed ... psycopg.OperationalError: failed to resolve host 'db': Temporary failure in name resolution` leading to `GET /health 503` (E5, E11). Correlates with DB `received fast shutdown request` at `16:52:20.582` + `database system is shut down` (E9) and DB `finished_at:2026-10-28T16:52:20` then restart `started_at:2026-10-28T16:57:17` (E8). DB is now `healthy` (E8) and `/health 200` (E2, E11), so dependency outage resolved.\n- DB logs show repeated `received fast shutdown request` / `database system is ready to accept connections` cycles at `16:43:58, 16:44:05, 16:44:11, 16:52:20` and restart at `16:57:17` (E9).\n\nConclusion: report of stopped uploads matches past transient errors - disk write error and DB-down period causing health 503 - but latest evidence shows uploads and health succeeding with resources available. No actionable ongoing root cause. 12/12 checks used.\n",
+  "seconds": 148.0,
+  "usage": {
+    "requests": 7,
+    "input": 81940,
+    "cached": 25540,
+    "output": 9848
+  },
+  "cost_usd": 0.1162,
+  "last_response_id": "resp_6ae22a85a5d0949c7ef84c53"
+}

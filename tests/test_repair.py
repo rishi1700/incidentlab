@@ -270,9 +270,32 @@ class TestVerifier(unittest.TestCase):
         with (
             patch.object(v, "post_upload", side_effect=fake_post),
             patch.object(v, "get_file", side_effect=lambda _: payload_hash["sent"]),
+            patch.object(v, "delete_file", return_value={"deleted": "ab" * 16}) as delete,
         ):
             result = repair.verify_recovery()
         self.assertTrue(result["ok"], result)
+        delete.assert_called_once_with("ab" * 16)
+
+    def test_cleanup_failure_keeps_ok(self):
+        import lab.verify as v
+
+        payload_hash = {}
+
+        def fake_post(payload: bytes):
+            import hashlib
+
+            h = hashlib.sha256(payload).hexdigest()
+            payload_hash["sent"] = payload
+            return {"id": "ab" * 16, "sha256": h}
+
+        with (
+            patch.object(v, "post_upload", side_effect=fake_post),
+            patch.object(v, "get_file", side_effect=lambda _: payload_hash["sent"]),
+            patch.object(v, "delete_file", side_effect=ConnectionError("gone")),
+        ):
+            result = repair.verify_recovery()
+        self.assertTrue(result["ok"], result)
+        self.assertIn("cleanup delete failed", result["detail"])
 
     def test_upload_failure_is_not_recovery(self):
         import lab.verify as v

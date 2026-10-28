@@ -92,6 +92,20 @@ def download(file_id: str):
     return FileResponse(path, filename=row[0])
 
 
+@app.delete("/files/{file_id}")
+def delete_file(file_id: str):
+    if not file_id or not all(c in "0123456789abcdef" for c in file_id):
+        raise HTTPException(status_code=404, detail="not found")
+    with psycopg.connect(DATABASE_URL) as conn:
+        row = conn.execute(
+            "DELETE FROM files WHERE id = %s RETURNING name", (file_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    (UPLOAD_DIR / file_id).unlink(missing_ok=True)
+    return {"deleted": file_id}
+
+
 @app.get("/health")
 def health():
     try:

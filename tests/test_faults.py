@@ -5,10 +5,12 @@ Run from the repo root: python3 -m unittest tests.test_faults -v
 """
 from __future__ import annotations
 
+import io
 import sys
 import unittest
+import urllib.error
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -103,6 +105,51 @@ class TestInjectGate(unittest.TestCase):
             with self.assertRaises(ValueError):
                 faults.inject("nope")
             uploads.assert_not_called()
+
+    def test_listed_fault_without_branch_raises(self):
+        with (patch.object(faults, "FAULTS", faults.FAULTS + ["future_fault"]),
+              patch.object(faults, "status_uploads", return_value=_uploads_ok()),
+              patch.object(faults, "status_volume", return_value=_volume_ok()),
+              patch.object(faults, "status_database", return_value=_db_ok()),
+              patch.object(faults, "_run_verifier", return_value=(True, "OK")),
+              patch.object(faults, "_docker_cmd") as cmd,
+              patch.object(faults, "_docker") as helper):
+            with self.assertRaisesRegex(RuntimeError, "no inject branch"):
+                faults.inject("future_fault")
+            cmd.assert_not_called()
+            helper.assert_not_called()
+
+
+class TestResetWaitsForHealth(unittest.TestCase):
+    def test_reset_waits_after_fix(self):
+        with (patch.object(faults, "_docker"),
+              patch.object(faults, "_wait_app_healthy") as wait,
+              patch("builtins.print")):
+            faults.reset("upload_dir_not_writable")
+        wait.assert_called_once_with()
+
+    def test_reset_fails_when_unhealthy(self):
+        with (patch.object(faults, "_docker"),
+              patch.object(faults, "_wait_app_healthy",
+                           side_effect=RuntimeError("app still unhealthy after 60s")),
+              patch("builtins.print") as echoed):
+            with self.assertRaisesRegex(RuntimeError, "still unhealthy"):
+                faults.reset("upload_dir_not_writable")
+            echoed.assert_not_called()
+
+    def test_wait_returns_on_200(self):
+        ok = MagicMock()
+        ok.__enter__.return_value.status = 200
+        with patch("lab.faults.urllib.request.urlopen", return_value=ok):
+            faults._wait_app_healthy()
+
+    def test_wait_fails_after_timeout(self):
+        err = urllib.error.HTTPError("http://x/health", 503, "x", {}, io.BytesIO(b""))
+        self.addCleanup(err.close)
+        with (patch("lab.faults.urllib.request.urlopen", side_effect=err),
+              patch.object(faults, "HEALTH_TIMEOUT", 0)):
+            with self.assertRaisesRegex(RuntimeError, "status 503"):
+                faults._wait_app_healthy()
 
 
 class TestRunVerifier(unittest.TestCase):

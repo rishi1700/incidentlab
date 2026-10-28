@@ -191,8 +191,12 @@ def ask_approval(repair_name: str, cause: str | None = None) -> bool:
 
 
 def verify_recovery() -> dict:
-    """Upload a new random 1 MB file, download it, compare SHA-256 hashes."""
-    from lab.verify import SIZE, get_file, post_upload
+    """Upload a new random 1 MB file, download it, compare SHA-256 hashes.
+
+    Deletes the test file afterwards. A failed delete is reported in the
+    detail but never changes the result.
+    """
+    from lab.verify import SIZE, delete_file, get_file, post_upload
 
     payload = secrets.token_bytes(SIZE)
     sent_hash = hashlib.sha256(payload).hexdigest()
@@ -211,7 +215,12 @@ def verify_recovery() -> dict:
     downloaded_hash = hashlib.sha256(downloaded).hexdigest()
     if downloaded_hash != sent_hash:
         return {"ok": False, "detail": "MISMATCH: downloaded hash != uploaded hash", "id": file_id}
-    return {"ok": True, "detail": "upload/download SHA-256 hashes match",
+    detail = "upload/download SHA-256 hashes match"
+    try:
+        delete_file(file_id)
+    except Exception as err:
+        detail += f" (cleanup delete failed: {type(err).__name__}: {err})"
+    return {"ok": True, "detail": detail,
             "id": file_id, "sha256": sent_hash, "bytes": len(payload)}
 
 

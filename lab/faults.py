@@ -28,6 +28,8 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,6 +39,7 @@ TMP = "tmp"
 APP_UID = int(os.environ.get("INCIDENTLAB_APP_UID", "1000"))
 APP_GID = int(os.environ.get("INCIDENTLAB_APP_GID", "1000"))
 DB = os.environ.get("INCIDENTLAB_DB", "incidentlab-db-1")
+APP_URL = os.environ.get("INCIDENTLAB_APP_URL", "http://localhost:8080")
 
 FAULT_UPLOAD_DIR = "upload_dir_not_writable"
 FAULT_VOLUME_FULL = "volume_full"
@@ -49,6 +52,8 @@ MAX_ORPHANS = 100      # plenty for the 512 MB lab; guards against runaway loops
 STALE_SECONDS = 3600   # shown in status only; repair.py owns the repair rule
 DB_READY_TIMEOUT = 90  # seconds to wait for the database to accept connections
 DB_POLL_SECONDS = 2
+HEALTH_TIMEOUT = 60    # seconds to wait for /health to return 200 after reset
+HEALTH_POLL_SECONDS = 2
 
 
 def _docker(*argv: str, user: str | None = None) -> str:
@@ -238,6 +243,25 @@ def _lab_problems() -> list[str]:
     return problems
 
 
+def _wait_app_healthy() -> None:
+    url = APP_URL.rstrip("/") + "/health"
+    deadline = time.monotonic() + HEALTH_TIMEOUT
+    last = "no response yet"
+    while True:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                if resp.status == 200:
+                    return
+                last = f"status {resp.status}"
+        except urllib.error.HTTPError as err:
+            last = f"status {err.code}"
+        except (urllib.error.URLError, OSError) as err:
+            last = f"{type(err).__name__}: {err}"
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"app still unhealthy after {HEALTH_TIMEOUT}s ({url}: {last})")
+        time.sleep(HEALTH_POLL_SECONDS)
+
+
 def inject(fault: str) -> None:
     if fault not in FAULTS:
         raise ValueError(f"unknown fault: {fault}")
@@ -250,8 +274,10 @@ def inject(fault: str) -> None:
         _docker("chmod", "755", f"/d/{UPLOADS}")
     elif fault == FAULT_VOLUME_FULL:
         _inject_volume_full()
-    else:
+    elif fault == FAULT_DATABASE:
         _docker_cmd("stop", DB)
+    else:
+        raise RuntimeError(f"no inject branch for fault: {fault}")
     print(f"{fault}: injected")
 
 
@@ -265,6 +291,7 @@ def reset(fault: str) -> None:
         _reset_database()
     else:
         raise ValueError(f"unknown fault: {fault}")
+    _wait_app_healthy()
     print(f"{fault}: reset")
 
 
