@@ -11,6 +11,8 @@ Results go to eval/results/<date>-<commit>/runs.jsonl, one JSON line per run.
 --no-model does every step except investigate.py (repairs never apply without
 a diagnosis, so the verifier-only branch runs instead) and writes to a
 separate nomodel- directory so smoke tests never pollute real results.
+With the model, MODEL_API_KEY is checked before the first run and the whole
+run stops after two model errors in a row.
 
 Usage:
     .venv/bin/python eval/run.py [--cases V1,D1] [--runs 3] [--no-model]
@@ -43,6 +45,33 @@ class HarnessError(Exception):
     def __init__(self, stage: str, message: str):
         super().__init__(message)
         self.stage = stage
+
+
+def _check_api_key() -> str | None:
+    """Error unless MODEL_API_KEY is set and clean. Never returns the key."""
+    key = os.environ.get("MODEL_API_KEY")
+    if not key:
+        return "MODEL_API_KEY is not set; export it before running the evaluation."
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in key):
+        return ("MODEL_API_KEY contains whitespace or control characters;"
+                " check it for copy-paste errors (the key itself is never printed).")
+    return None
+
+
+class _ModelErrorStop:
+    """Stops the run after model errors in consecutive executed runs."""
+
+    def __init__(self, limit: int = 2):
+        self.limit = limit
+        self.streak = 0
+
+    def note(self, record: dict) -> bool:
+        """Note one executed run. True when the whole run must stop."""
+        if record.get("stage") == "model":
+            self.streak += 1
+        else:
+            self.streak = 0
+        return self.streak >= self.limit
 
 
 def _git_commit() -> str:
@@ -261,6 +290,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.runs < 1:
         parser.error("--runs must be at least 1")
+    if not args.no_model:
+        key_error = _check_api_key()
+        if key_error is not None:
+            print(f"error: {key_error}", file=sys.stderr)
+            return 2
 
     with open(CASES_PATH) as f:
         cases = json.load(f)["cases"]
@@ -285,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"results: {results_dir} (commit {commit}, resuming,"
           f" {len(done)} runs already recorded)")
 
+    stop = _ModelErrorStop()
     for case in cases:
         for run_no in range(1, args.runs + 1):
             if (case["id"], run_no) in done:
@@ -295,6 +330,9 @@ def main(argv: list[str] | None = None) -> int:
             _append_record(runs_path, record)
             if "harness_error" in record:
                 print(f"harness error ({record['stage']}): {record['harness_error']}")
+            if stop.note(record):
+                print(f"stopping after two model errors in a row; see {runs_path}")
+                return 1
     print(f"done: {runs_path}")
     return 0
 

@@ -476,6 +476,7 @@ class Investigation:
         self.checks_in_loop = 0
         self.usage = {"requests": 0, "input": 0, "cached": 0, "output": 0}
         self.notes = ""
+        self.chain_retries = 0
 
     def _create(self, input_items: list, **extra):
         # instructions, tools and reasoning effort are per request: they do not carry
@@ -485,10 +486,26 @@ class Investigation:
             kwargs["reasoning"] = {"effort": EFFORT}
         if self.last_response_id:
             kwargs["previous_response_id"] = self.last_response_id
-        resp = self.client.responses.create(**kwargs)
-        self.last_response_id = resp.id
-        self._count(resp)
-        return resp
+        # Meta's API sometimes rejects a chained request with 400 "referenced
+        # response not found or expired" when the previous response is not saved
+        # yet; its docs say to retry after a short wait.
+        waits = [1, 2, 4, 8, None] if "previous_response_id" in kwargs else [None]
+        for wait in waits:
+            try:
+                resp = self.client.responses.create(**kwargs)
+            except Exception as err:
+                if (wait is None or getattr(err, "status_code", None) != 400
+                        or "referenced response not found or expired" not in str(err).lower()):
+                    raise
+                self.chain_retries += 1
+                print(f"retrying chained request in {wait}s"
+                      f" (attempt {self.chain_retries}/4): previous response not saved yet",
+                      file=sys.stderr)
+                time.sleep(wait)
+                continue
+            self.last_response_id = resp.id
+            self._count(resp)
+            return resp
 
     def _count(self, resp) -> None:
         self.usage["requests"] += 1
@@ -649,6 +666,7 @@ def main() -> None:
                        "repair_result": repair_result, "verification": verification,
                        "evidence": inv.evidence,
                        "investigation_notes": inv.notes, "seconds": seconds, "usage": inv.usage,
+                       "chain_retries": inv.chain_retries,
                        "cost_usd": round(inv.cost_usd(), 4),
                        "last_response_id": inv.last_response_id}, f, indent=2, default=str)
 
