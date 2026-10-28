@@ -166,7 +166,7 @@ def _check_lab_fs() -> None:
 
 
 def _inject_v1() -> None:
-    """Fill the volume with stale .part files in one helper container."""
+    """Fill the volume completely: zero bytes free, so /health also fails."""
     _check_lab_fs()
     app_user = f"{APP_UID}:{APP_GID}"
     stamp = _two_days_ago_stamp()
@@ -175,12 +175,12 @@ def _inject_v1() -> None:
         "i=0",
         "while [ $i -lt " + str(MAX_ORPHANS) + " ]; do",
         "  avail_kb=$(df -k /d | awk 'NR==2{print $4}')",
-        '  [ "$avail_kb" -ge 1024 ] || break',
-        "  if [ \"$avail_kb\" -ge " + str(CHUNK_MB * 1024)
-        + " ]; then count=" + str(CHUNK_MB)
-        + "; else count=$((avail_kb / 1024)); fi",
+        "  if [ \"$avail_kb\" -ge 32768 ]; then bs=1M; count=" + str(CHUNK_MB),
+        "  elif [ \"$avail_kb\" -ge 2048 ]; then bs=1M; count=1",
+        "  else break",
+        "  fi",
         "  name=" + _HEX32,
-        "  if dd if=/dev/urandom of=/d/tmp/$name.part bs=1M count=$count 2>/dev/null; then",
+        "  if dd if=/dev/urandom of=/d/tmp/$name.part bs=$bs count=$count 2>/dev/null; then",
         "    touch -t " + stamp + " /d/tmp/$name.part",
         "  else",
         "    touch -t " + stamp + " /d/tmp/$name.part 2>/dev/null || true",
@@ -188,9 +188,15 @@ def _inject_v1() -> None:
         "  fi",
         "  i=$((i + 1))",
         "done",
+        "# top up to true exhaustion: byte-sized files until one fails",
+        "while :; do",
+        "  name=" + _HEX32,
+        "  head -c 1 /dev/urandom > /d/tmp/$name.part 2>/dev/null || break",
+        "  touch -t " + stamp + " /d/tmp/$name.part",
+        "done",
     ])
     _docker("sh", "-c", script, user=app_user, timeout=300)
-    if _available_bytes() >= 1024 * 1024:
+    if _available_bytes() != 0:
         raise RuntimeError("V1 setup missed: volume still not full")
 
 
@@ -456,8 +462,24 @@ def inject(variant: str) -> None:
     print(f"{variant}: injected")
 
 
+def reset_all() -> None:
+    """Reset every fault family without waiting (for teardown sequences)."""
+    errors = []
+    for name, fix in (("volume", _reset_volume_full),
+                      ("permissions", _reset_upload_dirs),
+                      ("database", _reset_database)):
+        try:
+            fix()
+        except Exception as err:   # noqa: BLE001 - collected below
+            errors.append(f"{name}: {err}")
+    if errors:
+        raise RuntimeError("reset incomplete: " + "; ".join(errors))
+
+
 def reset(variant: str) -> None:
-    if variant in V_VARIANTS:
+    if variant == "all":
+        reset_all()
+    elif variant in V_VARIANTS:
         _reset_volume_full()
     elif variant in P_VARIANTS:
         _reset_upload_dirs()

@@ -1,0 +1,17 @@
+{"cases": [
+  {"id": "V1", "type": "fault", "setup": "V1", "unavailable_checks": [], "expected_cause": "volume_full", "expected_repair": "clear_stale_temp_files"},
+  {"id": "V2", "type": "fault", "setup": "V2", "unavailable_checks": [], "expected_cause": "volume_full", "expected_repair": "clear_stale_temp_files"},
+  {"id": "V3", "type": "fault", "setup": "V3", "unavailable_checks": [], "expected_cause": "volume_full", "expected_repair": "clear_stale_temp_files"},
+  {"id": "P1", "type": "fault", "setup": "P1", "unavailable_checks": [], "expected_cause": "upload_dir_not_writable", "expected_repair": "restore_upload_dir_access"},
+  {"id": "P2", "type": "fault", "setup": "P2", "type": "fault", "setup": "P2", "unavailable_checks": [], "expected_cause": "upload_dir_not_writable", "expected_repair": "restore_upload_dir_access"},
+  {"id": "P3", "type": "fault", "setup": "P3", "unavailable_checks": [], "expected_cause": "upload_dir_not_writable", "expected_repair": "restore_upload_dir_access"},
+  {"id": "D1", "type": "fault", "setup": "D1", "unavailable_checks": [], "expected_cause": "database_unavailable", "expected_repair": "restore_database"},
+  {"id": "D2", "type": "fault", "setup": "D2", "unavailable_checks": [], "expected_cause": "database_unavailable", "expected_repair": "restore_database"},
+  {"id": "D3", "type": "fault", "setup": "D3", "unavailable_checks": [], "expected_cause": "database_unavailable", "expected_repair": "restore_database"},
+  {"id": "H1", "type": "healthy", "setup": "H1", "unavailable_checks": [], "expected_cause": "healthy", "expected_repair": null},
+  {"id": "H2", "type": "healthy", "setup": "H2", "unavailable_checks": [], "expected_cause": "healthy", "expected_repair": null},
+  {"id": "H3", "type": "healthy", "setup": "H3", "unavailable_checks": [], "expected_cause": "healthy", "expected_repair": null},
+  {"id": "M1", "type": "missing", "setup": "P1", "unavailable_checks": ["path_access", "container_logs"], "expected_cause": "insufficient_evidence", "expected_repair": null},
+  {"id": "M2", "type": "missing", "setup": "V1", "unavailable_checks": ["disk_usage", "container_logs"], "expected_cause": "insufficient_evidence", "expected_repair": null},
+  {"id": "M3", "type": "missing", "setup": "D1", "unavailable_checks": ["container_logs"], "expected_cause": "database_unavailable", "expected_repair": "restore_database"}
+]}

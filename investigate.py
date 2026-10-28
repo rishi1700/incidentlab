@@ -338,7 +338,13 @@ _CITATION = {
 REPORT_SCHEMA = {
     "type": "object",
     "properties": {
-        "cause": {"type": "string", "enum": CAUSES},
+        "cause": {"type": "string", "enum": CAUSES,
+                  "description": (
+                      "volume_full: the app's data filesystem has no usable space or inodes left; "
+                      "upload_dir_not_writable: the app user cannot write to its upload or staging directory; "
+                      "database_unavailable: the app cannot reach a working database; "
+                      "healthy: uploads work now; "
+                      "insufficient_evidence: the evidence does not show one cause")},
         "summary": {"type": "string", "description": "Two or three sentences for the administrator."},
         "findings": {
             "type": "array",
@@ -373,6 +379,7 @@ How to work:
 - "healthy" and "insufficient_evidence" are valid outcomes. Do not force a diagnosis.
 - You cannot change the system. Repairs happen separately, after a person approves them.
 - You have a budget of {MAX_CHECKS} checks.
+- The listed causes are not the only possible problems. Don't conclude a cause only because the others are ruled out; choose insufficient_evidence unless the evidence shows the cause itself.
 - In follow-up answers, cite evidence IDs for every factual claim."""
 
 REPORT_REQUEST = (

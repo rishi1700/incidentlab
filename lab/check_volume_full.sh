@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 echo "=== 1. inject: uploads fail ==="
 python3 lab/faults.py inject volume_full
 python3 lab/faults.py status volume_full
+echo -n "health during V1: "; curl -s -m 5 "${INCIDENTLAB_APP_URL:-http://localhost:8080}/health"; echo "(expect 503: V1 is completely full, unlike V3)"
 python3 repair.py verify; echo "verify exit=$? (1 = broken, expected)"
 
 echo "=== 2. repair alone frees the space, verify passes ==="

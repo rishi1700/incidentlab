@@ -248,6 +248,31 @@ class TestVariantDispatch(unittest.TestCase):
                     for mock in mocks.values():
                         mock.assert_not_called()
 
+    def test_reset_all_runs_every_family_then_waits(self):
+        with (patch.object(faults, "_reset_volume_full") as volume,
+              patch.object(faults, "_reset_upload_dirs") as perms,
+              patch.object(faults, "_reset_database") as db,
+              patch.object(faults, "_wait_app_healthy") as wait,
+              patch("builtins.print")):
+            faults.reset("all")
+        volume.assert_called_once_with()
+        perms.assert_called_once_with()
+        db.assert_called_once_with()
+        wait.assert_called_once_with()
+
+    def test_reset_all_collects_failures(self):
+        with (patch.object(faults, "_reset_volume_full",
+                           side_effect=RuntimeError("boom")),
+              patch.object(faults, "_reset_upload_dirs") as perms,
+              patch.object(faults, "_reset_database") as db,
+              patch.object(faults, "_wait_app_healthy") as wait,
+              patch("builtins.print")):
+            with self.assertRaisesRegex(RuntimeError, "reset incomplete"):
+                faults.reset("all")
+        perms.assert_called_once_with()
+        db.assert_called_once_with()
+        wait.assert_not_called()
+
     def test_reset_unknown_variant_raises(self):
         with self.assertRaises(ValueError):
             faults.reset("nope")
