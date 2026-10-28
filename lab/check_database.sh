@@ -25,6 +25,19 @@ python3 lab/faults.py reset database_unavailable
 python3 lab/faults.py status database_unavailable
 python3 repair.py verify
 
+echo "=== 4. inject refuses while the lab is already broken ==="
+python3 lab/faults.py inject database_unavailable
+BEFORE=$(python3 lab/faults.py status database_unavailable)
+python3 lab/faults.py inject database_unavailable; echo "inject exit=$? (1 = refused, expected)"
+AFTER=$(python3 lab/faults.py status database_unavailable)
+if [ "$BEFORE" = "$AFTER" ]; then
+  echo "unchanged: refused inject changed nothing"
+else
+  echo "WARNING: status changed across refused inject"
+fi
+python3 lab/faults.py reset database_unavailable
+python3 repair.py verify
+
 APP_STARTED_AFTER=$(docker inspect "$APP" --format '{{.State.StartedAt}} {{.RestartCount}}')
 if [ "$APP_STARTED_BEFORE" = "$APP_STARTED_AFTER" ]; then
   echo "app container untouched (no restart): $APP_STARTED_AFTER"

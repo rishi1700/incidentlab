@@ -3,6 +3,7 @@ name: incidentlab
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: lab
       POSTGRES_PASSWORD: lab
@@ -17,6 +18,7 @@ services:
 
   app:
     build: ./app
+    restart: unless-stopped
     user: "1000:1000"
     ports:
       - "127.0.0.1:8080:8000"

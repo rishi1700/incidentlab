@@ -8,6 +8,9 @@ data dir names the fault. Helpers run as anonymous `--rm` containers.
 The volume_full files look like orphaned partial uploads: random hex names in
 the app's own `<id>.part` shape, owned by the app user, dated two days ago.
 
+inject refuses unless the lab is healthy first: status must show no fault
+and the upload/read-back verifier must pass. It changes nothing then.
+
 Usage:
     python3 lab/faults.py inject upload_dir_not_writable
     python3 lab/faults.py inject volume_full
@@ -26,6 +29,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 DATA_MOUNT = os.environ.get("INCIDENTLAB_DATA_MOUNT", "/srv/lab-data")
 UPLOADS = "uploads"
@@ -178,16 +182,76 @@ def _reset_volume_full() -> None:
         _docker("rm", "-f", *(f"/d/{TMP}/{name}" for name in names))
 
 
+def _run_verifier() -> tuple[bool, str]:
+    """Run repair.py verify as a child (no imports: this file runs from lab/)."""
+    repair_py = Path(__file__).resolve().parent.parent / "repair.py"
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(repair_py), "verify"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, timeout=180,
+        )
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return False, str(err)
+    lines = proc.stdout.strip().splitlines()
+    return proc.returncode == 0, lines[-1] if lines else f"exit {proc.returncode}"
+
+
+def _lab_problems() -> list[str]:
+    """Why the lab is not healthy (empty means clean). Status first, then verify."""
+    problems: list[str] = []
+    try:
+        uploads = status_uploads()
+    except (OSError, RuntimeError) as err:
+        problems.append(f"uploads/ status unreadable: {err}")
+    else:
+        if not uploads["app_user_can_write"]:
+            problems.append(
+                f"uploads/ not writable by app user"
+                f" (owner {uploads['owner_uid']}:{uploads['owner_gid']},"
+                f" mode {uploads['mode']})")
+    try:
+        volume = status_volume()
+    except (OSError, RuntimeError) as err:
+        problems.append(f"volume status unreadable: {err}")
+    else:
+        if volume["use_percent"] >= 95:
+            problems.append(
+                f"volume {volume['use_percent']}% full"
+                f" ({volume['available_mb']} MB free)")
+    try:
+        db = status_database()
+    except (OSError, RuntimeError) as err:
+        problems.append(f"db status unreadable: {err}")
+    else:
+        if not db["running"]:
+            problems.append(f"db {DB} not running (status {db['status']})")
+        elif db["paused"]:
+            problems.append(f"db {DB} is paused")
+        elif db["health"] not in ("healthy", "no healthcheck"):
+            problems.append(f"db {DB} health is {db['health']}")
+    if problems:
+        return problems
+    ok, detail = _run_verifier()
+    if not ok:
+        problems.append(f"pre-inject verify failed: {detail}")
+    return problems
+
+
 def inject(fault: str) -> None:
+    if fault not in FAULTS:
+        raise ValueError(f"unknown fault: {fault}")
+    problems = _lab_problems()
+    if problems:
+        raise RuntimeError(
+            f"lab is not healthy, refusing to inject {fault}: " + "; ".join(problems))
     if fault == FAULT_UPLOAD_DIR:
         _docker("chown", "0:0", f"/d/{UPLOADS}")
         _docker("chmod", "755", f"/d/{UPLOADS}")
     elif fault == FAULT_VOLUME_FULL:
         _inject_volume_full()
-    elif fault == FAULT_DATABASE:
-        _docker_cmd("stop", DB)
     else:
-        raise ValueError(f"unknown fault: {fault}")
+        _docker_cmd("stop", DB)
     print(f"{fault}: injected")
 
 
