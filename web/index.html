@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IncidentLab demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2em auto;
+         padding: 0 1em; line-height: 1.45; }
+  h1 { font-size: 1.5em; }
+  h2 { font-size: 1.15em; border-bottom: 1px solid #ccc; padding-bottom: 0.2em; }
+  h3 { font-size: 1em; margin-bottom: 0.3em; }
+  textarea { width: 100%; height: 3.5em; font: inherit; }
+  input[type=text] { width: 70%; font: inherit; }
+  button { font: inherit; padding: 0.3em 1em; margin: 0.4em 0.4em 0.4em 0; }
+  button:disabled { opacity: 0.5; }
+  .hint, .empty, .stats { color: #444; }
+  .badge { display: inline-block; font-size: 0.8em; padding: 0 0.5em;
+           border-radius: 0.8em; margin-left: 0.5em; }
+  .ok { background: #d8f0d8; color: #1a5c1a; }
+  .err { background: #f6d8d8; color: #7c1f1f; }
+  details { margin: 0.3em 0; }
+  summary { cursor: pointer; }
+  summary code { margin: 0 0.4em; }
+  pre { background: #f4f4f4; padding: 0.6em; overflow-x: auto; font-size: 0.85em; }
+  ul { margin-top: 0.2em; padding-left: 1.4em; }
+  li { margin: 0.25em 0; }
+  .cite-detail { color: #444; font-size: 0.9em; }
+  #status { margin-left: 0.6em; }
+  .qa { margin: 0.6em 0; }
+</style>
+</head>
+<body>
+<h1>IncidentLab demo</h1>
+<p class="hint">Inject a fault from the terminal first, then describe the symptom below.</p>
+
+<section>
+  <h2>Symptom</h2>
+  <textarea id="symptom">Uploads have stopped working. Find out what is happening.</textarea><br>
+  <button id="go">Investigate</button><span id="status" role="status"></span>
+</section>
+
+<section>
+  <h2>Evidence trail</h2>
+  <div id="trail"><p class="empty">No checks yet.</p></div>
+</section>
+
+<section id="report-sec" hidden>
+  <h2>Report</h2>
+  <p>Diagnosis: <strong id="cause"></strong></p>
+  <p id="summary"></p>
+  <h3>Findings</h3>
+  <ul id="findings"></ul>
+  <h3>Ruled out</h3>
+  <ul id="ruledout"></ul>
+  <h3>Open questions</h3>
+  <ul id="questions"></ul>
+  <p class="stats" id="stats"></p>
+</section>
+
+<section id="follow-sec" hidden>
+  <h2>Follow-up</h2>
+  <div id="answers"></div>
+  <input type="text" id="question" placeholder="Ask about this incident">
+  <button id="ask">Ask</button>
+</section>
+
+<section id="repair-sec" hidden>
+  <h2>Repair</h2>
+  <p>Mapped repair: <code id="repair-name"></code></p>
+  <button id="approve">Approve repair</button>
+  <div id="repair-out"></div>
+</section>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+function badge(ok, goodText, badText) {
+  const s = document.createElement("span");
+  s.className = "badge " + (ok ? "ok" : "err");
+  s.textContent = ok ? goodText : badText;
+  return s;
+}
+
+function clearChildren(el) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+// POST and yield each SSE "data:" payload as parsed JSON.
+async function* postEvents(url, body) {
+  const resp = await fetch(url, {method: "POST",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try { detail = (await resp.json()).detail || detail; } catch { /* keep status */ }
+    throw new Error(`${resp.status}: ${detail}`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const {done, value} = await reader.read();
+    if (done) return;
+    buf += decoder.decode(value, {stream: true});
+    let cut;
+    while ((cut = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("data:")) yield JSON.parse(line.slice(5));
+      }
+    }
+  }
+}
+
+let checkCount = 0;
+
+function addCheck(ev) {
+  checkCount++;
+  const empty = document.querySelector("#trail .empty");
+  if (empty) empty.remove();
+  const box = document.createElement("details");
+  const head = document.createElement("summary");
+  const id = document.createElement("strong");
+  id.textContent = ev.evidence_id;
+  const name = document.createElement("code");
+  name.textContent = `${ev.check}(${ev.arguments})`;
+  head.append(id, name, badge(ev.ok, "ok", "error: " + (ev.data.error || "failed")));
+  const data = document.createElement("pre");
+  data.textContent = JSON.stringify(ev.data, null, 2);
+  box.append(head, data);
+  $("trail").append(box);
+}
+
+function addCitation(list, row) {
+  const li = document.createElement("li");
+  li.append(document.createTextNode(row.text + " "), badge(row.supported, "supported", "UNSUPPORTED"));
+  const detail = document.createElement("div");
+  detail.className = "cite-detail";
+  detail.textContent = row.detail;
+  li.append(detail);
+  $(list).append(li);
+}
+
+function showReport(ev) {
+  $("cause").textContent = ev.report.cause;
+  $("summary").textContent = ev.report.summary;
+  for (const row of ev.validation.citations) {
+    addCitation(row.kind === "finding" ? "findings" : "ruledout", row);
+  }
+  if (!ev.report.findings.length) $("findings").append("None.");
+  if (!ev.report.ruled_out.length) $("ruledout").append("None.");
+  for (const q of ev.report.open_questions) {
+    const li = document.createElement("li");
+    li.textContent = q;
+    $("questions").append(li);
+  }
+  if (!ev.report.open_questions.length) $("questions").append("None.");
+  const u = ev.usage;
+  $("stats").textContent =
+    `${checkCount} checks, ${ev.seconds}s, ${u.requests} requests, ` +
+    `${u.input} input / ${u.output} output tokens, ~$${ev.cost_usd.toFixed(3)}`;
+  for (const w of ev.validation.warnings) {
+    const p = document.createElement("p");
+    p.className = "warn";
+    p.textContent = "WARNING: " + w;
+    $("report-sec").append(p);
+  }
+  $("report-sec").hidden = false;
+  $("follow-sec").hidden = false;
+  if (ev.repair) {
+    $("repair-name").textContent = ev.repair;
+    clearChildren($("repair-out"));
+    $("approve").disabled = false;
+    $("repair-sec").hidden = false;
+  }
+}
+
+async function investigate() {
+  $("go").disabled = true;
+  $("status").textContent = "investigating…";
+  checkCount = 0;
+  clearChildren($("trail"));
+  for (const id of ["findings", "ruledout", "questions", "answers"]) clearChildren($(id));
+  document.querySelectorAll("#report-sec > p.warn").forEach((p) => p.remove());
+  for (const id of ["report-sec", "follow-sec", "repair-sec"]) $(id).hidden = true;
+  try {
+    for await (const ev of postEvents("/api/investigate", {symptom: $("symptom").value})) {
+      if (ev.type === "check") addCheck(ev);
+      else if (ev.type === "done") { showReport(ev); $("status").textContent = "done."; }
+      else if (ev.type === "error") $("status").textContent = "failed: " + ev.message;
+    }
+  } catch (err) {
+    $("status").textContent = "failed: " + err.message;
+  }
+  $("go").disabled = false;
+}
+
+async function followup() {
+  const q = $("question").value.trim();
+  if (!q) return;
+  $("ask").disabled = true;
+  const box = document.createElement("div");
+  box.className = "qa";
+  const title = document.createElement("div");
+  const b = document.createElement("strong");
+  b.textContent = "Q: " + q;
+  title.append(b);
+  const answer = document.createElement("p");
+  answer.textContent = "thinking…";
+  const stats = document.createElement("p");
+  stats.className = "stats";
+  box.append(title, answer, stats);
+  $("answers").append(box);
+  $("question").value = "";
+  try {
+    for await (const ev of postEvents("/api/followup", {question: q})) {
+      if (ev.type === "check") addCheck(ev);
+      else if (ev.type === "answer") {
+        answer.textContent = ev.text;
+        stats.textContent = `${ev.seconds}s, ~$${ev.cost_usd.toFixed(3)} session total`;
+      }
+      else if (ev.type === "error") answer.textContent = "failed: " + ev.message;
+    }
+  } catch (err) {
+    answer.textContent = "failed: " + err.message;
+  }
+  $("ask").disabled = false;
+}
+
+async function approve() {
+  $("approve").disabled = true;
+  clearChildren($("repair-out"));
+  const out = $("repair-out");
+  const line = (label, result) => {
+    const p = document.createElement("p");
+    p.append(document.createTextNode(label + ": "),
+      badge(result && result.ok, result && result.ok ? "OK" : "FAILED", "FAILED"),
+      document.createTextNode(" " + ((result && result.detail) || "no result")));
+    out.append(p);
+  };
+  try {
+    const resp = await fetch("/api/repair", {method: "POST"});
+    if (!resp.ok) {
+      let detail = resp.statusText;
+      try { detail = (await resp.json()).detail || detail; } catch { /* keep status */ }
+      throw new Error(`${resp.status}: ${detail}`);
+    }
+    const r = await resp.json();
+    line(`Repair ${r.repair}`, r.repair_result);
+    if (r.verification) line("Verification", r.verification);
+  } catch (err) {
+    const p = document.createElement("p");
+    p.textContent = "failed: " + err.message;
+    out.append(p);
+    $("approve").disabled = false;
+  }
+}
+
+$("go").addEventListener("click", investigate);
+$("ask").addEventListener("click", followup);
+$("question").addEventListener("keydown", (e) => { if (e.key === "Enter") followup(); });
+$("approve").addEventListener("click", approve);
+</script>
+</body>
+</html>

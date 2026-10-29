@@ -469,8 +469,12 @@ def validate_report(report: dict, evidence: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 class Investigation:
-    def __init__(self, client: OpenAI):
+    def __init__(self, client: OpenAI, on_check=None):
         self.client = client
+        # Optional callback for live progress (the demo page). Called with one
+        # dict per check that runs: evidence_id, check, arguments, ok, data.
+        # None (the default) leaves the CLI and recorded results unaffected.
+        self.on_check = on_check
         self.evidence: dict[str, dict] = {}
         self.last_response_id: str | None = None
         self.checks_in_loop = 0
@@ -532,6 +536,9 @@ class Investigation:
             self.evidence[eid] = {"check": call.name, "arguments": call.arguments, "data": data}
             print(f"  {eid:<4}{call.name}({_short_args(call.arguments)})  "
                   f"{'ok' if ok else 'error: ' + data['error']}")
+            if self.on_check is not None:
+                self.on_check({"evidence_id": eid, "check": call.name,
+                               "arguments": call.arguments, "ok": ok, "data": data})
             result = {"evidence_id": eid, "data": data}
         return {"type": "function_call_output", "call_id": call.call_id,
                 "output": json.dumps(result, default=str)}

@@ -143,5 +143,59 @@ class TestStatelessReplay(unittest.TestCase):
         self.assertNotIn("previous_response_id", client.responses.calls[3])
 
 
+class TestOnCheck(unittest.TestCase):
+    def _investigate(self, script, **kwargs):
+        events = []
+        client = FakeClient(script)
+        inv = investigate.Investigation(client, on_check=events.append, **kwargs)
+        with (patch.object(investigate, "run_check", return_value={"status_code": 200}),
+              patch("builtins.print")):
+            inv.investigate("symptom")
+        return events
+
+    def test_off_by_default(self):
+        inv = investigate.Investigation(FakeClient([]))
+        self.assertIsNone(inv.on_check)
+
+    def test_called_once_per_check_with_evidence_id(self):
+        events = self._investigate([
+            _resp("r1", [FakeItem(CALL)]),
+            _resp("r2", [FakeItem(MESSAGE)]),
+            _resp("r3", [], text='{"cause": "healthy"}'),
+        ])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["evidence_id"], "E1")
+        self.assertEqual(events[0]["check"], "app_health")
+        self.assertEqual(events[0]["arguments"], "{}")
+        self.assertTrue(events[0]["ok"])
+        self.assertEqual(events[0]["data"], {"status_code": 200})
+
+    def test_reports_check_errors(self):
+        events = []
+        client = FakeClient([
+            _resp("r1", [FakeItem(CALL)]),
+            _resp("r2", [FakeItem(MESSAGE)]),
+            _resp("r3", [], text='{"cause": "healthy"}'),
+        ])
+        inv = investigate.Investigation(client, on_check=events.append)
+        with (patch.object(investigate, "run_check",
+                           side_effect=investigate.CheckError("nope")),
+              patch("builtins.print")):
+            inv.investigate("symptom")
+        self.assertEqual(len(events), 1)
+        self.assertFalse(events[0]["ok"])
+        self.assertEqual(events[0]["data"], {"error": "nope"})
+
+    def test_budget_reached_emits_nothing(self):
+        events = []
+        inv = investigate.Investigation(FakeClient([]), on_check=events.append)
+        inv.checks_in_loop = investigate.MAX_CHECKS
+        call = SimpleNamespace(name="app_health", arguments="{}", call_id="call-1")
+        with patch("builtins.print"):
+            inv._answer(call)
+        self.assertEqual(events, [])
+        self.assertEqual(inv.evidence, {})
+
+
 if __name__ == "__main__":
     unittest.main()
