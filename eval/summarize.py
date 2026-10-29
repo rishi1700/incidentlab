@@ -2,10 +2,12 @@
 """Summarize one evaluation results directory into summary.md.
 
 Reads runs.jsonl (keeping the last record per case and run), then reports
-model and baseline accuracy by case type, false alarms, citation support,
-recovery rate, cost and time. Harness-error and --no-model records are
-counted separately and excluded from the metrics. Results are never edited
-by hand; to change anything, re-run and summarize again.
+a per-case table (expected cause, model answer per run, baseline answer,
+citations supported, recovery verified) plus model and baseline accuracy
+by case type, false alarms, citation support, recovery rate, cost and
+time. Harness-error and --no-model records are counted separately and
+excluded from the metrics. Results are never edited by hand; to change
+anything, re-run and summarize again.
 
 Usage:
     python3 eval/summarize.py eval/results/<date>-<commit>
@@ -18,10 +20,18 @@ import sys
 from pathlib import Path
 
 TYPES = {"V": "fault", "P": "fault", "D": "fault", "H": "healthy", "M": "missing"}
+CASE_PREFIX_ORDER = {"V": 0, "P": 1, "D": 2, "H": 3, "M": 4}
 
 
 def case_type(case_id: str) -> str:
     return TYPES.get(case_id[:1], "fault")
+
+
+def case_order(case_id: str) -> tuple[int, int]:
+    try:
+        return (CASE_PREFIX_ORDER[case_id[:1]], int(case_id[1:]))
+    except (KeyError, ValueError):
+        return (len(CASE_PREFIX_ORDER), 0)
 
 
 def load_records(results_dir: Path) -> list[dict]:
@@ -54,6 +64,49 @@ def accuracy_table(records: list[dict], key: str) -> list[str]:
     return lines
 
 
+def per_case_table(records: list[dict]) -> list[str]:
+    runs = sorted({r["run"] for r in records})
+    cases = sorted({r["case"] for r in records}, key=case_order)
+    by_case_run = {(r["case"], r["run"]): r for r in records}
+    header = ["Case", "Type", "Expected"]
+    header += [f"Model run {n}" for n in runs]
+    header += ["Baseline", "Citations", "Recovery"]
+    lines = ["| " + " | ".join(header) + " |"]
+    lines.append("|" + "---|" * len(header))
+    for case in cases:
+        by_run = [by_case_run.get((case, n)) for n in runs]
+        expected = next((r.get("expected_cause", "?") for r in by_run if r), "?")
+        cells: list[str] = []
+        for r in by_run:
+            if r is None:
+                cells.append("missing")
+            elif "harness_error" in r:
+                cells.append("error")
+            elif r.get("no_model"):
+                cells.append("skipped")
+            else:
+                cells.append(str(r.get("model_cause", "?")))
+        base = sorted({str(r.get("baseline_cause", "?")) for r in by_run if r
+                       and "harness_error" not in r and not r.get("no_model")})
+        baseline = "; ".join(base) if base else "n/a"
+        cited = [(r.get("citations_supported"), r.get("citations_total"))
+                 for r in by_run if r and "harness_error" not in r
+                 and not r.get("no_model")]
+        if cited and all(s is not None and t is not None for s, t in cited):
+            citations = f"{sum(s for s, _ in cited)}/{sum(t for _, t in cited)}"
+        else:
+            citations = "n/a"
+        settled = [r for r in by_run if r and "recovery_verified" in r]
+        if settled:
+            recovery = f"{sum(1 for r in settled if r['recovery_verified'])}/{len(settled)}"
+        else:
+            recovery = "n/a"
+        lines.append("| " + " | ".join(
+            [case, case_type(case), str(expected)] + cells
+            + [baseline, citations, recovery]) + " |")
+    return lines
+
+
 def summarize(results_dir: Path) -> str:
     records = load_records(results_dir)
     errors = [r for r in records if "harness_error" in r]
@@ -73,6 +126,11 @@ def summarize(results_dir: Path) -> str:
         out.append(f"Model: {', '.join(models)};"
                    f" reasoning effort: {', '.join(efforts)};"
                    f" check limit: {', '.join(limits)}.")
+    out.append("")
+
+    out.append("## Per-case results")
+    out.append("")
+    out.extend(per_case_table(records))
     out.append("")
 
     out.append("## Model accuracy")

@@ -82,8 +82,11 @@ def _git_commit() -> str:
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, check=True, timeout=30,
         ).stdout.strip()
+        # Ignore eval/results/: a resumed run would otherwise count the result
+        # files from its first part as uncommitted changes and label itself
+        # dirty even though the evaluation code never changed.
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=ROOT,
+            ["git", "status", "--porcelain", "--", ":!eval/results"], cwd=ROOT,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, timeout=30,
         ).stdout.strip()
@@ -239,11 +242,13 @@ def _one_run(case: dict, run_no: int, commit: str, no_model: bool,
     case_id = case["id"]
     print(f"=== {case_id} run {run_no} ===", flush=True)
     started = time.monotonic()
+    started_wall = datetime.now().astimezone().isoformat(timespec="seconds")
 
     try:
         _recreate_lab()
     except HarnessError as err:
         return {"case": case_id, "run": run_no, "commit": commit,
+                "started_at": started_wall,
                 "harness_error": str(err), "stage": err.stage,
                 "run_seconds": round(time.monotonic() - started, 1)}
 
@@ -290,6 +295,7 @@ def _one_run(case: dict, run_no: int, commit: str, no_model: bool,
         expected = case["expected_cause"]
         record = {
             "case": case_id, "run": run_no, "commit": commit,
+            "started_at": started_wall,
             "model": investigate.MODEL, "reasoning_effort": investigate.EFFORT,
             "check_limit": investigate.MAX_CHECKS,
             "expected_cause": expected,
@@ -316,6 +322,7 @@ def _one_run(case: dict, run_no: int, commit: str, no_model: bool,
             record["no_model"] = True
     except HarnessError as err:
         record = {"case": case_id, "run": run_no, "commit": commit,
+                  "started_at": started_wall,
                   "model": investigate.MODEL,
                   "reasoning_effort": investigate.EFFORT,
                   "check_limit": investigate.MAX_CHECKS,

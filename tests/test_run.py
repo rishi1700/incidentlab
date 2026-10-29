@@ -11,6 +11,7 @@ import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -177,6 +178,72 @@ class TestProbeUpload(unittest.TestCase):
               patch("builtins.print")):
             with self.assertRaisesRegex(run_module.HarnessError, "residue remains"):
                 run_module._probe_upload_must_fail("V3")
+
+
+class TestGitCommit(unittest.TestCase):
+    def _commit_with(self, status_out):
+        cmds = []
+
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            out = "3fdc746\n" if cmd[1] == "rev-parse" else status_out
+            return SimpleNamespace(stdout=out)
+
+        with patch("subprocess.run", side_effect=fake_run):
+            result = run_module._git_commit()
+        return result, cmds
+
+    def test_ignores_results_dir(self):
+        result, cmds = self._commit_with("")
+        self.assertEqual(result, "3fdc746")
+        status_cmd = [c for c in cmds if c[1] == "status"][0]
+        self.assertIn(":!eval/results", status_cmd)
+
+    def test_other_changes_are_dirty(self):
+        result, _ = self._commit_with(" M eval/run.py\n")
+        self.assertEqual(result, "3fdc746-dirty")
+
+
+class TestStartedAt(unittest.TestCase):
+    def _case(self):
+        return {"id": "H1", "setup": "H1", "type": "healthy",
+                "expected_cause": "healthy", "unavailable_checks": []}
+
+    def _one_run(self):
+        return run_module._one_run(self._case(), 1, "abc1234", True, 60,
+                                   Path(tempfile.gettempdir()))
+
+    def test_success_record_has_started_at(self):
+        with (patch.object(run_module, "_recreate_lab"),
+              patch.object(run_module, "_reset_everything"),
+              patch.object(run_module, "_run_repair_step",
+                           return_value=(None, True)),
+              patch.object(faults_module, "_lab_problems", return_value=[]),
+              patch.object(faults_module, "inject"),
+              patch.object(run_module.baseline_module, "run",
+                           return_value={"cause": "healthy", "rule": 1}),
+              patch("builtins.print")):
+            record = self._one_run()
+        self.assertTrue(record["no_model"])
+        datetime.fromisoformat(record["started_at"])  # raises if missing/bad
+
+    def test_harness_error_record_has_started_at(self):
+        with (patch.object(run_module, "_recreate_lab"),
+              patch.object(run_module, "_reset_everything"),
+              patch.object(faults_module, "_lab_problems", return_value=[]),
+              patch.object(faults_module, "inject", side_effect=Exception("boom")),
+              patch("builtins.print")):
+            record = self._one_run()
+        self.assertEqual(record["stage"], "setup")
+        datetime.fromisoformat(record["started_at"])
+
+    def test_recreate_failure_record_has_started_at(self):
+        with (patch.object(run_module, "_recreate_lab",
+                           side_effect=run_module.HarnessError("recreate", "boom")),
+              patch("builtins.print")):
+            record = self._one_run()
+        self.assertEqual(record["stage"], "recreate")
+        datetime.fromisoformat(record["started_at"])
 
 
 if __name__ == "__main__":
