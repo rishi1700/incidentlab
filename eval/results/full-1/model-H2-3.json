@@ -1,0 +1,774 @@
+{
+  "symptom": "Uploads have stopped working. Find out what is happening.",
+  "model": "muse-spark-1.3",
+  "effort": "medium",
+  "unavailable_checks": [],
+  "report": {
+    "cause": "healthy",
+    "findings": [
+      {
+        "citation": {
+          "evidence_id": "E12",
+          "field": "lines",
+          "value": "2026-10-29T15:51:59.802845023Z INFO:     172.18.0.1:41538 - \"POST /upload HTTP/1.1\" 200 OK"
+        },
+        "claim": "Uploads succeed now; most recent upload returned 200 OK"
+      },
+      {
+        "citation": {
+          "evidence_id": "E12",
+          "field": "lines",
+          "value": "2026-10-29T15:52:01.529721325Z INFO:     172.18.0.1:52760 - \"GET /health HTTP/1.1\" 200 OK"
+        },
+        "claim": "App health endpoint is returning 200 OK"
+      },
+      {
+        "citation": {
+          "evidence_id": "E10",
+          "field": "health",
+          "value": "healthy"
+        },
+        "claim": "Database container is running and reported healthy"
+      },
+      {
+        "citation": {
+          "evidence_id": "E5",
+          "field": "use_percent",
+          "value": "9.0"
+        },
+        "claim": "Data filesystem has ample free space"
+      },
+      {
+        "citation": {
+          "evidence_id": "E6",
+          "field": "app_user_can_write",
+          "value": "true"
+        },
+        "claim": "Upload directory is writable by the app user"
+      },
+      {
+        "citation": {
+          "evidence_id": "E8",
+          "field": "mounts.0.source",
+          "value": "/srv/lab-data"
+        },
+        "claim": "Host upload data is bind-mounted into the app container as writable"
+      }
+    ],
+    "open_questions": [],
+    "ruled_out": [
+      {
+        "cause": "volume_full",
+        "citation": {
+          "evidence_id": "E5",
+          "field": "use_percent",
+          "value": "9.0"
+        },
+        "reason": "Use is only 9% with 410MB available, not full"
+      },
+      {
+        "cause": "upload_dir_not_writable",
+        "citation": {
+          "evidence_id": "E6",
+          "field": "app_user_can_write",
+          "value": "true"
+        },
+        "reason": "Upload dir is writable by app uid/gid"
+      },
+      {
+        "cause": "database_unavailable",
+        "citation": {
+          "evidence_id": "E10",
+          "field": "health",
+          "value": "healthy"
+        },
+        "reason": "DB is healthy and app health checks that require DB succeed"
+      }
+    ],
+    "summary": "Uploads are working now with 200 OK responses and health checks passing. A brief database restart caused transient connection-refused errors but the database recovered and no persistent volume, permission, or database failure remains."
+  },
+  "validation": {
+    "citations": [
+      {
+        "kind": "finding",
+        "text": "Uploads succeed now; most recent upload returned 200 OK",
+        "supported": true,
+        "detail": "E12.lines matches"
+      },
+      {
+        "kind": "finding",
+        "text": "App health endpoint is returning 200 OK",
+        "supported": true,
+        "detail": "E12.lines matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Database container is running and reported healthy",
+        "supported": true,
+        "detail": "E10.health matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Data filesystem has ample free space",
+        "supported": true,
+        "detail": "E5.use_percent matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Upload directory is writable by the app user",
+        "supported": true,
+        "detail": "E6.app_user_can_write matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Host upload data is bind-mounted into the app container as writable",
+        "supported": true,
+        "detail": "E8.mounts.0.source matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "volume_full: Use is only 9% with 410MB available, not full",
+        "supported": true,
+        "detail": "E5.use_percent matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "upload_dir_not_writable: Upload dir is writable by app uid/gid",
+        "supported": true,
+        "detail": "E6.app_user_can_write matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "database_unavailable: DB is healthy and app health checks that require DB succeed",
+        "supported": true,
+        "detail": "E10.health matches"
+      }
+    ],
+    "supported": 9,
+    "total": 9,
+    "warnings": []
+  },
+  "repair": null,
+  "repair_result": null,
+  "verification": null,
+  "evidence": {
+    "E1": {
+      "check": "list_containers",
+      "arguments": "{}",
+      "data": {
+        "containers": [
+          {
+            "name": "incidentlab-app-1",
+            "image": "incidentlab-app",
+            "state": "running",
+            "status": "Up 10 seconds"
+          },
+          {
+            "name": "incidentlab-db-1",
+            "image": "postgres:16",
+            "state": "running",
+            "status": "Up 8 seconds (healthy)"
+          }
+        ]
+      }
+    },
+    "E2": {
+      "check": "app_health",
+      "arguments": "{}",
+      "data": {
+        "url": "http://localhost:8080/health",
+        "status_code": 200,
+        "body": "{\"status\":\"ok\"}"
+      }
+    },
+    "E3": {
+      "check": "recent_events",
+      "arguments": "{\"minutes\":60}",
+      "data": {
+        "minutes": 60,
+        "events": [
+          {
+            "time": "2026-10-29T15:51:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:13+00:00",
+            "container": "incidentlab-db-1",
+            "action": "restart",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:18+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:23+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:28+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:33+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:38+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:43+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "975bacb69864_incidentlab-db-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-db-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-db-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-db-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "0535986d7338_incidentlab-app-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-app-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-app-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-app-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-app-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-app-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:45+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:50+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:50+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:50+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:50+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:51+00:00",
+            "container": "incidentlab-app-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:53+00:00",
+            "container": "incidentlab-db-1",
+            "action": "restart",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:51:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:51:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          }
+        ]
+      }
+    },
+    "E4": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":100}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "lines": [
+          "2026-10-29T15:51:51.405465906Z INFO:     Started server process [1]",
+          "2026-10-29T15:51:51.405493781Z INFO:     Waiting for application startup.",
+          "2026-10-29T15:51:51.411620091Z INFO:     Application startup complete.",
+          "2026-10-29T15:51:51.411760424Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)",
+          "2026-10-29T15:51:53.203803009Z INFO:     172.18.0.1:41364 - \"GET /health HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.272472162Z INFO:     172.18.0.1:41380 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.278107928Z INFO:     172.18.0.1:41388 - \"GET /files/7ca21b8626e7629d0666994ebdd86d8e HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.287111995Z INFO:     172.18.0.1:41402 - \"DELETE /files/7ca21b8626e7629d0666994ebdd86d8e HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.349606756Z INFO:     172.18.0.1:41416 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.354549270Z INFO:     172.18.0.1:41422 - \"GET /files/edbe3dd938004eab21a7e9a3db4b3534 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.361629457Z INFO:     172.18.0.1:41426 - \"DELETE /files/edbe3dd938004eab21a7e9a3db4b3534 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.482071424Z health check failed",
+          "2026-10-29T15:51:53.482081632Z Traceback (most recent call last):",
+          "2026-10-29T15:51:53.482083340Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-29T15:51:53.482084549Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-29T15:51:53.482085424Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-29T15:51:53.482086215Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-29T15:51:53.482087174Z     raise last_ex.with_traceback(None)",
+          "2026-10-29T15:51:53.482088049Z psycopg.OperationalError: connection failed: connection to server at \"172.18.0.2\", port 5432 failed: Connection refused",
+          "2026-10-29T15:51:53.482089090Z \tIs the server running on that host and accepting TCP/IP connections?",
+          "2026-10-29T15:51:53.482173215Z INFO:     172.18.0.1:41438 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-29T15:51:53.483709262Z health check failed",
+          "2026-10-29T15:51:53.483718137Z Traceback (most recent call last):",
+          "2026-10-29T15:51:53.483719595Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-29T15:51:53.483720637Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-29T15:51:53.483721512Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-29T15:51:53.483722345Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-29T15:51:53.483723262Z     raise last_ex.with_traceback(None)",
+          "2026-10-29T15:51:53.483724095Z psycopg.OperationalError: connection failed: connection to server at \"172.18.0.2\", port 5432 failed: Connection refused",
+          "2026-10-29T15:51:53.483725053Z \tIs the server running on that host and accepting TCP/IP connections?",
+          "2026-10-29T15:51:53.483857345Z INFO:     172.18.0.1:41454 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-29T15:51:53.485125766Z health check failed",
+          "2026-10-29T15:51:53.485350183Z Traceback (most recent call last):",
+          "2026-10-29T15:51:53.485354558Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-29T15:51:53.485355808Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-29T15:51:53.485358350Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-29T15:51:53.485359266Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-29T15:51:53.485360266Z     raise last_ex.with_traceback(None)",
+          "2026-10-29T15:51:53.485361058Z psycopg.OperationalError: connection failed: connection to server at \"172.18.0.2\", port 5432 failed: Connection refused",
+          "2026-10-29T15:51:53.485362058Z \tIs the server running on that host and accepting TCP/IP connections?",
+          "2026-10-29T15:51:53.485390683Z INFO:     172.18.0.1:41456 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-29T15:51:53.527764463Z INFO:     172.18.0.1:41470 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.532355393Z INFO:     172.18.0.1:41486 - \"GET /files/40dc0beac25a8676036bb393d6d45c22 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.539596762Z INFO:     172.18.0.1:41500 - \"DELETE /files/40dc0beac25a8676036bb393d6d45c22 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.584729293Z INFO:     172.18.0.1:41512 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.589238567Z INFO:     172.18.0.1:41516 - \"GET /files/551ae5fa9d0065a9b70e0ae34ff33166 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.595926676Z INFO:     172.18.0.1:41524 - \"DELETE /files/551ae5fa9d0065a9b70e0ae34ff33166 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.724903070Z INFO:     172.18.0.1:41526 - \"GET /health HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.802845023Z INFO:     172.18.0.1:41538 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.806931271Z INFO:     172.18.0.1:41546 - \"GET /files/557aba2e1fcbaf3e1beb677710c0b7d8 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.813122404Z INFO:     172.18.0.1:41554 - \"DELETE /files/557aba2e1fcbaf3e1beb677710c0b7d8 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.845697149Z INFO:     172.18.0.1:41566 - \"GET /health HTTP/1.1\" 200 OK",
+          "2026-10-29T15:52:01.529721325Z INFO:     172.18.0.1:52760 - \"GET /health HTTP/1.1\" 200 OK"
+        ],
+        "older_lines_omitted": 0
+      }
+    },
+    "E5": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/srv/lab-data\"}",
+      "data": {
+        "path": "/srv/lab-data",
+        "mountpoint": "/srv/lab-data",
+        "size_mb": 487.2,
+        "used_mb": 40.7,
+        "available_mb": 410.6,
+        "use_percent": 9.0,
+        "inode_use_percent": 0.2
+      }
+    },
+    "E6": {
+      "check": "path_access",
+      "arguments": "{\"path\":\"/srv/lab-data/uploads\"}",
+      "data": {
+        "path": "/srv/lab-data/uploads",
+        "is_dir": true,
+        "owner_uid": 1000,
+        "owner_gid": 1000,
+        "mode": "0755",
+        "app_uid": 1000,
+        "app_gid": 1000,
+        "app_user_can_write": true,
+        "method": "owner and mode bits only; ignores ACLs and supplementary groups"
+      }
+    },
+    "E7": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-db-1\",\"tail\":100}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "lines": [
+          "2026-10-29T15:51:45.578691165Z ",
+          "2026-10-29T15:51:45.578704207Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-29T15:51:45.578706082Z ",
+          "2026-10-29T15:51:45.587184648Z 2026-10-29 15:51:45.587 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-29T15:51:45.587282315Z 2026-10-29 15:51:45.587 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-29T15:51:45.587285398Z 2026-10-29 15:51:45.587 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-29T15:51:45.588605568Z 2026-10-29 15:51:45.588 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-29T15:51:45.590467782Z 2026-10-29 15:51:45.590 UTC [29] LOG:  database system was shut down at 2026-10-29 15:51:45 UTC",
+          "2026-10-29T15:51:45.592084120Z 2026-10-29 15:51:45.592 UTC [1] LOG:  database system is ready to accept connections",
+          "2026-10-29T15:51:53.379485049Z 2026-10-29 15:51:53.379 UTC [1] LOG:  received fast shutdown request",
+          "2026-10-29T15:51:53.380184676Z 2026-10-29 15:51:53.380 UTC [1] LOG:  aborting any active transactions",
+          "2026-10-29T15:51:53.380870595Z 2026-10-29 15:51:53.380 UTC [1] LOG:  background worker \"logical replication launcher\" (PID 32) exited with exit code 1",
+          "2026-10-29T15:51:53.381725555Z 2026-10-29 15:51:53.381 UTC [27] LOG:  shutting down",
+          "2026-10-29T15:51:53.382218390Z 2026-10-29 15:51:53.382 UTC [27] LOG:  checkpoint starting: shutdown immediate",
+          "2026-10-29T15:51:53.386293902Z 2026-10-29 15:51:53.386 UTC [27] LOG:  checkpoint complete: wrote 5 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.005 s; sync files=4, longest=0.001 s, average=0.001 s; distance=14 kB, estimate=14 kB; lsn=0/1B69580, re",
+          "2026-10-29T15:51:53.387625489Z 2026-10-29 15:51:53.387 UTC [1] LOG:  database system is shut down",
+          "2026-10-29T15:51:53.489665237Z ",
+          "2026-10-29T15:51:53.489671987Z PostgreSQL Database directory appears to contain a database; Skipping initialization",
+          "2026-10-29T15:51:53.489673445Z ",
+          "2026-10-29T15:51:53.499597307Z 2026-10-29 15:51:53.499 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+          "2026-10-29T15:51:53.499741599Z 2026-10-29 15:51:53.499 UTC [1] LOG:  listening on IPv4 address \"0.0.0.0\", port 5432",
+          "2026-10-29T15:51:53.499778682Z 2026-10-29 15:51:53.499 UTC [1] LOG:  listening on IPv6 address \"::\", port 5432",
+          "2026-10-29T15:51:53.501327936Z 2026-10-29 15:51:53.501 UTC [1] LOG:  listening on Unix socket \"/var/run/postgresql/.s.PGSQL.5432\"",
+          "2026-10-29T15:51:53.503246770Z 2026-10-29 15:51:53.503 UTC [30] LOG:  database system was shut down at 2026-10-29 15:51:53 UTC",
+          "2026-10-29T15:51:53.505002119Z 2026-10-29 15:51:53.504 UTC [1] LOG:  database system is ready to accept connections"
+        ],
+        "older_lines_omitted": 0
+      }
+    },
+    "E8": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-app-1\"}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "no healthcheck",
+        "restart_count": 0,
+        "started_at": "2026-10-29T15:51:51.086682169Z",
+        "finished_at": "0001-01-01T00:00:00Z",
+        "user": "1000:1000",
+        "mounts": [
+          {
+            "type": "bind",
+            "source": "/srv/lab-data",
+            "destination": "/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E9": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/\"}",
+      "data": {
+        "path": "/",
+        "mountpoint": "/",
+        "size_mb": 98121.7,
+        "used_mb": 6695.7,
+        "available_mb": 91410.0,
+        "use_percent": 6.8,
+        "inode_use_percent": 1.5
+      }
+    },
+    "E10": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-db-1\"}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "healthy",
+        "restart_count": 0,
+        "started_at": "2026-10-29T15:51:53.430415777Z",
+        "finished_at": "2026-10-29T15:51:53.389561494Z",
+        "user": "(not set: runs as root)",
+        "mounts": [
+          {
+            "type": "volume",
+            "source": "/var/lib/docker/volumes/incidentlab_dbdata/_data",
+            "destination": "/var/lib/postgresql/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E11": {
+      "check": "path_access",
+      "arguments": "{\"path\":\"/srv/lab-data\"}",
+      "data": {
+        "path": "/srv/lab-data",
+        "is_dir": true,
+        "owner_uid": 1000,
+        "owner_gid": 1000,
+        "mode": "0755",
+        "app_uid": 1000,
+        "app_gid": 1000,
+        "app_user_can_write": true,
+        "method": "owner and mode bits only; ignores ACLs and supplementary groups"
+      }
+    },
+    "E12": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":50}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "lines": [
+          "2026-10-29T15:51:51.411760424Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)",
+          "2026-10-29T15:51:53.203803009Z INFO:     172.18.0.1:41364 - \"GET /health HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.272472162Z INFO:     172.18.0.1:41380 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.278107928Z INFO:     172.18.0.1:41388 - \"GET /files/7ca21b8626e7629d0666994ebdd86d8e HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.287111995Z INFO:     172.18.0.1:41402 - \"DELETE /files/7ca21b8626e7629d0666994ebdd86d8e HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.349606756Z INFO:     172.18.0.1:41416 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.354549270Z INFO:     172.18.0.1:41422 - \"GET /files/edbe3dd938004eab21a7e9a3db4b3534 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.361629457Z INFO:     172.18.0.1:41426 - \"DELETE /files/edbe3dd938004eab21a7e9a3db4b3534 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.482071424Z health check failed",
+          "2026-10-29T15:51:53.482081632Z Traceback (most recent call last):",
+          "2026-10-29T15:51:53.482083340Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-29T15:51:53.482084549Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-29T15:51:53.482085424Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-29T15:51:53.482086215Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-29T15:51:53.482087174Z     raise last_ex.with_traceback(None)",
+          "2026-10-29T15:51:53.482088049Z psycopg.OperationalError: connection failed: connection to server at \"172.18.0.2\", port 5432 failed: Connection refused",
+          "2026-10-29T15:51:53.482089090Z \tIs the server running on that host and accepting TCP/IP connections?",
+          "2026-10-29T15:51:53.482173215Z INFO:     172.18.0.1:41438 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-29T15:51:53.483709262Z health check failed",
+          "2026-10-29T15:51:53.483718137Z Traceback (most recent call last):",
+          "2026-10-29T15:51:53.483719595Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-29T15:51:53.483720637Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-29T15:51:53.483721512Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-29T15:51:53.483722345Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-29T15:51:53.483723262Z     raise last_ex.with_traceback(None)",
+          "2026-10-29T15:51:53.483724095Z psycopg.OperationalError: connection failed: connection to server at \"172.18.0.2\", port 5432 failed: Connection refused",
+          "2026-10-29T15:51:53.483725053Z \tIs the server running on that host and accepting TCP/IP connections?",
+          "2026-10-29T15:51:53.483857345Z INFO:     172.18.0.1:41454 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-29T15:51:53.485125766Z health check failed",
+          "2026-10-29T15:51:53.485350183Z Traceback (most recent call last):",
+          "2026-10-29T15:51:53.485354558Z   File \"/app/main.py\", line 113, in health",
+          "2026-10-29T15:51:53.485355808Z     with psycopg.connect(DATABASE_URL, connect_timeout=CONNECT_TIMEOUT) as conn:",
+          "2026-10-29T15:51:53.485358350Z          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+          "2026-10-29T15:51:53.485359266Z   File \"/usr/local/lib/python3.12/site-packages/psycopg/connection.py\", line 126, in connect",
+          "2026-10-29T15:51:53.485360266Z     raise last_ex.with_traceback(None)",
+          "2026-10-29T15:51:53.485361058Z psycopg.OperationalError: connection failed: connection to server at \"172.18.0.2\", port 5432 failed: Connection refused",
+          "2026-10-29T15:51:53.485362058Z \tIs the server running on that host and accepting TCP/IP connections?",
+          "2026-10-29T15:51:53.485390683Z INFO:     172.18.0.1:41456 - \"GET /health HTTP/1.1\" 503 Service Unavailable",
+          "2026-10-29T15:51:53.527764463Z INFO:     172.18.0.1:41470 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.532355393Z INFO:     172.18.0.1:41486 - \"GET /files/40dc0beac25a8676036bb393d6d45c22 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.539596762Z INFO:     172.18.0.1:41500 - \"DELETE /files/40dc0beac25a8676036bb393d6d45c22 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.584729293Z INFO:     172.18.0.1:41512 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.589238567Z INFO:     172.18.0.1:41516 - \"GET /files/551ae5fa9d0065a9b70e0ae34ff33166 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:53.595926676Z INFO:     172.18.0.1:41524 - \"DELETE /files/551ae5fa9d0065a9b70e0ae34ff33166 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.724903070Z INFO:     172.18.0.1:41526 - \"GET /health HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.802845023Z INFO:     172.18.0.1:41538 - \"POST /upload HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.806931271Z INFO:     172.18.0.1:41546 - \"GET /files/557aba2e1fcbaf3e1beb677710c0b7d8 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.813122404Z INFO:     172.18.0.1:41554 - \"DELETE /files/557aba2e1fcbaf3e1beb677710c0b7d8 HTTP/1.1\" 200 OK",
+          "2026-10-29T15:51:59.845697149Z INFO:     172.18.0.1:41566 - \"GET /health HTTP/1.1\" 200 OK",
+          "2026-10-29T15:52:01.529721325Z INFO:     172.18.0.1:52760 - \"GET /health HTTP/1.1\" 200 OK"
+        ],
+        "older_lines_omitted": 0
+      }
+    }
+  },
+  "investigation_notes": "Verdict: **healthy** - no current failure found. Upload path verified working.\n\nEvidence:\n- Both containers `running`: app `Up 10 seconds`, db `Up 8 seconds (healthy)` (E1). Confirmed by inspect: app `running:true, exit_code:0` (E8), db `running:true, health:healthy` (E10).\n- App `/health` returns `200 {\"status\":\"ok\"}` (E2). Later logs show `GET /health 200 OK` at 15:51:59 and 15:52:01 (E12, E4).\n- Uploads succeeding: `POST /upload 200 OK` at 15:51:53.27, 15:51:53.34, 15:51:53.52, 15:51:53.58 and 15:51:59.80 (E4, E12), with matching `GET /files/... 200 OK` and `DELETE ... 200 OK` (E4, E12).\n- Storage not full: `/srv/lab-data 9.0% used, 410.6 MB available` (E5), `/ 6.8% used` (E9), inodes 0.2% and 1.5% (E5, E9).\n- Permissions OK: `/srv/lab-data/uploads is_dir:true, app_user_can_write:true, 0755, uid/gid 1000:1000 matching app 1000:1000` (E6), parent `/srv/lab-data` same (E11).\n- Mount correct: `bind /srv/lab-data -> /data rw:true` (E8).\n- DB ready: `database system is ready to accept connections` at 15:51:53.504 (E7).\n\nTransient symptom noted and recovered:\n- DB `restart` at 15:51:53 (E3) with `received fast shutdown request ... database system is shut down` then restart (E7) caused 3x `GET /health 503` with `psycopg.OperationalError: Connection refused to 172.18.0.2:5432` at 15:51:53.48 (E4, E12). Health recovered to 200 immediately after DB ready (E4, E12).\n\nNo evidence of persistent upload failure, disk pressure, permission denial, or missing mount. If uploads were reported failing, failure window was the brief DB restart and is now resolved.\n",
+  "seconds": 16.9,
+  "usage": {
+    "requests": 6,
+    "input": 46144,
+    "cached": 13252,
+    "output": 4011
+  },
+  "cost_usd": 0.0601,
+  "last_response_id": "resp_6ae36bb09de0e35c74e44527"
+}

@@ -1,0 +1,612 @@
+{
+  "symptom": "Uploads have stopped working. Find out what is happening.",
+  "model": "muse-spark-1.3",
+  "effort": "medium",
+  "unavailable_checks": [
+    "container_logs",
+    "path_access"
+  ],
+  "report": {
+    "cause": "insufficient_evidence",
+    "findings": [
+      {
+        "citation": {
+          "evidence_id": "E2",
+          "field": "body",
+          "value": "{\"status\":\"unhealthy\"}"
+        },
+        "claim": "App health endpoint reports unhealthy"
+      },
+      {
+        "citation": {
+          "evidence_id": "E1",
+          "field": "containers.0.state",
+          "value": "running"
+        },
+        "claim": "App container incidentlab-app-1 is running"
+      },
+      {
+        "citation": {
+          "evidence_id": "E5",
+          "field": "health",
+          "value": "healthy"
+        },
+        "claim": "Database container reports healthy"
+      },
+      {
+        "citation": {
+          "evidence_id": "E7",
+          "field": "use_percent",
+          "value": "9.0"
+        },
+        "claim": "Lab-data filesystem is only 9% used"
+      },
+      {
+        "citation": {
+          "evidence_id": "E7",
+          "field": "inode_use_percent",
+          "value": "0.2"
+        },
+        "claim": "Lab-data inode use is only 0.2%"
+      },
+      {
+        "citation": {
+          "evidence_id": "E3",
+          "field": "error",
+          "value": "this data source is unavailable"
+        },
+        "claim": "App logs were unavailable so upload error is unknown"
+      },
+      {
+        "citation": {
+          "evidence_id": "E8",
+          "field": "error",
+          "value": "this data source is unavailable"
+        },
+        "claim": "Upload directory access check was unavailable so writability is unknown"
+      }
+    ],
+    "open_questions": [
+      "What error do app logs and health details show for uploads?",
+      "Can the app user write to /srv/lab-data/uploads?",
+      "Can the app establish a working connection to the database despite the db container being healthy?"
+    ],
+    "ruled_out": [
+      {
+        "cause": "volume_full",
+        "citation": {
+          "evidence_id": "E7",
+          "field": "use_percent",
+          "value": "9.0"
+        },
+        "reason": "lab-data filesystem has ample free space and inodes, so not full"
+      }
+    ],
+    "summary": "The app is running but reports unhealthy and uploads fail. Disk-full is ruled out and the database container reports healthy, but logs and upload-directory checks were unavailable so the root cause cannot be singled out."
+  },
+  "validation": {
+    "citations": [
+      {
+        "kind": "finding",
+        "text": "App health endpoint reports unhealthy",
+        "supported": true,
+        "detail": "E2.body matches"
+      },
+      {
+        "kind": "finding",
+        "text": "App container incidentlab-app-1 is running",
+        "supported": true,
+        "detail": "E1.containers.0.state matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Database container reports healthy",
+        "supported": true,
+        "detail": "E5.health matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Lab-data filesystem is only 9% used",
+        "supported": true,
+        "detail": "E7.use_percent matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Lab-data inode use is only 0.2%",
+        "supported": true,
+        "detail": "E7.inode_use_percent matches"
+      },
+      {
+        "kind": "finding",
+        "text": "App logs were unavailable so upload error is unknown",
+        "supported": true,
+        "detail": "E3.error matches"
+      },
+      {
+        "kind": "finding",
+        "text": "Upload directory access check was unavailable so writability is unknown",
+        "supported": true,
+        "detail": "E8.error matches"
+      },
+      {
+        "kind": "ruled_out",
+        "text": "volume_full: lab-data filesystem has ample free space and inodes, so not full",
+        "supported": true,
+        "detail": "E7.use_percent matches"
+      }
+    ],
+    "supported": 8,
+    "total": 8,
+    "warnings": []
+  },
+  "repair": null,
+  "repair_result": null,
+  "verification": null,
+  "evidence": {
+    "E1": {
+      "check": "list_containers",
+      "arguments": "{}",
+      "data": {
+        "containers": [
+          {
+            "name": "incidentlab-app-1",
+            "image": "incidentlab-app",
+            "state": "running",
+            "status": "Up 5 seconds"
+          },
+          {
+            "name": "incidentlab-db-1",
+            "image": "postgres:16",
+            "state": "running",
+            "status": "Up 10 seconds (healthy)"
+          }
+        ]
+      }
+    },
+    "E2": {
+      "check": "app_health",
+      "arguments": "{}",
+      "data": {
+        "url": "http://localhost:8080/health",
+        "status_code": 503,
+        "body": "{\"status\":\"unhealthy\"}"
+      }
+    },
+    "E3": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":50}",
+      "data": {
+        "error": "this data source is unavailable"
+      }
+    },
+    "E4": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-app-1\"}",
+      "data": {
+        "name": "incidentlab-app-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "no healthcheck",
+        "restart_count": 0,
+        "started_at": "2026-10-29T15:55:04.743081379Z",
+        "finished_at": "0001-01-01T00:00:00Z",
+        "user": "1000:1000",
+        "mounts": [
+          {
+            "type": "bind",
+            "source": "/srv/lab-data",
+            "destination": "/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E5": {
+      "check": "inspect_container",
+      "arguments": "{\"name\":\"incidentlab-db-1\"}",
+      "data": {
+        "name": "incidentlab-db-1",
+        "status": "running",
+        "running": true,
+        "exit_code": 0,
+        "error": null,
+        "oom_killed": false,
+        "health": "healthy",
+        "restart_count": 0,
+        "started_at": "2026-10-29T15:54:59.158941835Z",
+        "finished_at": "0001-01-01T00:00:00Z",
+        "user": "(not set: runs as root)",
+        "mounts": [
+          {
+            "type": "volume",
+            "source": "/var/lib/docker/volumes/incidentlab_dbdata/_data",
+            "destination": "/var/lib/postgresql/data",
+            "rw": true
+          }
+        ],
+        "networks": [
+          "incidentlab_default"
+        ]
+      }
+    },
+    "E6": {
+      "check": "recent_events",
+      "arguments": "{\"minutes\":60}",
+      "data": {
+        "minutes": 60,
+        "events": [
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-db-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-db-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "2420fdeea7ab_incidentlab-app-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-app-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-app-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-app-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-app-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-app-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:24+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:29+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:30+00:00",
+            "container": "incidentlab-app-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:34+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:34+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:34+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:39+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:39+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:39+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:44+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:44+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:44+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:49+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:49+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:50+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:55+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:55+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:55+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "143046b2c0d8_incidentlab-db-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "incidentlab-db-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "9ef8af983107_incidentlab-app-1",
+            "action": "create",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:58+00:00",
+            "container": "incidentlab-app-1",
+            "action": "kill",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:59+00:00",
+            "container": "incidentlab-app-1",
+            "action": "stop",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:59+00:00",
+            "container": "incidentlab-app-1",
+            "action": "die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:54:59+00:00",
+            "container": "incidentlab-app-1",
+            "action": "destroy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:59+00:00",
+            "container": "incidentlab-app-1",
+            "action": "rename",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:54:59+00:00",
+            "container": "incidentlab-db-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:04+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:04+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:04+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          },
+          {
+            "time": "2026-10-29T15:55:04+00:00",
+            "container": "incidentlab-db-1",
+            "action": "health_status: healthy",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:04+00:00",
+            "container": "incidentlab-app-1",
+            "action": "start",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:09+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_create: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:09+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_start: /bin/sh -c pg_isready -U lab -d lab",
+            "exit_code": null
+          },
+          {
+            "time": "2026-10-29T15:55:09+00:00",
+            "container": "incidentlab-db-1",
+            "action": "exec_die",
+            "exit_code": "0"
+          }
+        ]
+      }
+    },
+    "E7": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/srv/lab-data\"}",
+      "data": {
+        "path": "/srv/lab-data",
+        "mountpoint": "/srv/lab-data",
+        "size_mb": 487.2,
+        "used_mb": 40.7,
+        "available_mb": 410.6,
+        "use_percent": 9.0,
+        "inode_use_percent": 0.2
+      }
+    },
+    "E8": {
+      "check": "path_access",
+      "arguments": "{\"path\":\"/srv/lab-data/uploads\"}",
+      "data": {
+        "error": "this data source is unavailable"
+      }
+    },
+    "E9": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-db-1\",\"tail\":50}",
+      "data": {
+        "error": "this data source is unavailable"
+      }
+    },
+    "E10": {
+      "check": "disk_usage",
+      "arguments": "{\"path\":\"/\"}",
+      "data": {
+        "path": "/",
+        "mountpoint": "/",
+        "size_mb": 98121.7,
+        "used_mb": 6696.2,
+        "available_mb": 91409.5,
+        "use_percent": 6.8,
+        "inode_use_percent": 1.5
+      }
+    },
+    "E11": {
+      "check": "path_access",
+      "arguments": "{\"path\":\"/srv/lab-data\"}",
+      "data": {
+        "error": "this data source is unavailable"
+      }
+    },
+    "E12": {
+      "check": "container_logs",
+      "arguments": "{\"name\":\"incidentlab-app-1\",\"tail\":100}",
+      "data": {
+        "error": "this data source is unavailable"
+      }
+    }
+  },
+  "investigation_notes": "Diagnosis: **insufficient_evidence**\n\nWhat is happening:\n- Application `incidentlab-app-1` is `running` [E1,E4] but its `/health` returns `503 unhealthy` [E2]. Uploads stopped working is consistent with unhealthy app, but unhealthy is a symptom, not root cause.\n- Database `incidentlab-db-1` is `running` and `healthy` [E1,E5], with repeated `pg_isready exit 0` and `health_status: healthy` [E6]. This rules out DB-down as current cause, but does not prove app-to-DB connectivity.\n- Both containers were re-created/started ~15:54:24-15:55:04 [E6], with `restart_count 0` [E4,E5], `oom_killed false` [E4,E5]. No crash-loop evidence.\n- Filesystem capacity is not full: `/srv/lab-data 9.0% used, 0.2% inode` [E7] and `/ 6.8% used` [E10]. Disk-full / inode-full ruled out.\n- App has bind mount `source /srv/lab-data -> /data rw true` [E4] and runs as `1000:1000` [E4], so uploads depend on host directory writability, which could not be verified.\n\nWhat is missing - no conclusion on cause possible:\n- App logs unavailable [E3,E12] and DB logs unavailable [E9], so application error for uploads/health failure was not seen.\n- Upload directory access check for `/srv/lab-data/uploads` unavailable [E8] and for `/srv/lab-data` unavailable [E11], so permission / ownership / writable status for user `1000:1000` [E4] was not seen.\n- Without logs and path_access, permission-denied vs DB-error vs other app error cannot be distinguished. Do not conclude a cause by elimination alone.\n\nBudget of 12 checks used. Repairs require human approval; no changes made.\n",
+  "seconds": 21.3,
+  "usage": {
+    "requests": 5,
+    "input": 20434,
+    "cached": 5685,
+    "output": 4752
+  },
+  "cost_usd": 0.0395,
+  "last_response_id": "resp_6ae36c70c8204d7833b54f8a"
+}
