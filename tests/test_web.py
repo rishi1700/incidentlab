@@ -10,6 +10,7 @@ import ast
 import importlib.util
 import json
 import os
+import queue
 import sys
 import unittest
 from pathlib import Path
@@ -69,6 +70,10 @@ REPORT = {"cause": "volume_full", "summary": "The data disk is full.",
                                       "value": "200"}}],
           "ruled_out": [], "open_questions": ["who filled the disk?"]}
 
+ANSWER = {"answer": "the disk filled up",
+          "citations": [{"evidence_id": "E1", "field": "status_code", "value": "200"},
+                        {"evidence_id": "E9", "field": "x", "value": "y"}]}
+
 
 def _events(resp):
     """Parse the SSE stream of a completed TestClient response."""
@@ -127,15 +132,19 @@ class TestDemoServer(unittest.TestCase):
         self.assertEqual(check["arguments"], "{}")
         self.assertTrue(check["ok"])
         self.assertEqual(check["data"], {"status_code": 200})
+        self.assertEqual(check["summary"], "200")
         done = events[1]
         self.assertEqual(done["report"]["cause"], "volume_full")
         self.assertEqual(done["repair"], "clear_stale_temp_files")
         self.assertEqual(done["validation"]["supported"], 1)
         self.assertEqual(done["validation"]["total"], 1)
+        row = done["validation"]["citations"][0]
+        self.assertEqual(row["citation"], REPORT["findings"][0]["citation"])
 
-    def test_followup_streams_answer(self):
-        script = self._investigate_script() + [
-            _resp("r4", [FakeItem(MESSAGE)], text="the disk filled up")]
+    def test_followup_streams_validated_citations(self):
+        script = (self._investigate_script()
+                  + [_resp("r4", [FakeItem(MESSAGE)]),
+                     _resp("r5", [], text=json.dumps(ANSWER))])
         key, client, checks, quiet = self._fake_model(script)
         with key, client, checks, quiet:
             self._events_check(self.client.post(
@@ -144,6 +153,25 @@ class TestDemoServer(unittest.TestCase):
         events = _events(resp)
         self.assertEqual([e["type"] for e in events], ["answer"])
         self.assertEqual(events[0]["text"], "the disk filled up")
+        cites = events[0]["citations"]
+        self.assertEqual(len(cites), 2)
+        self.assertTrue(cites[0]["supported"])
+        self.assertEqual(cites[0]["citation"]["evidence_id"], "E1")
+        self.assertFalse(cites[1]["supported"])
+        self.assertIn("E9", cites[1]["detail"])
+
+    def test_emit_check_falls_back_when_summary_fails(self):
+        events = queue.Queue()
+        with patch.object(server, "summarize_check", side_effect=ValueError("x")):
+            server._emit_check(events, {"evidence_id": "E1", "check": "app_health",
+                                        "arguments": "{}", "ok": True, "data": {}})
+        self.assertEqual(events.get()["summary"], "result recorded")
+
+    def test_page_has_polish_wiring(self):
+        html = (Path(server.__file__).parent / "index.html").read_text()
+        for needle in ("trail-sum", "cite-link", "gotoEvidence", "mark.hit",
+                       ">Investigate</button> <span", '"ev-" +'):
+            self.assertIn(needle, html)
 
     def _events_check(self, resp):
         self.assertEqual(_events(resp)[-1]["type"], "done")
@@ -201,6 +229,15 @@ class TestDemoServer(unittest.TestCase):
         self.assertEqual(events[0]["type"], "error")
         self.assertIn("MODEL_API_KEY", events[0]["message"])
 
+    def test_ruled_out_rows_carry_their_citations(self):
+        report = dict(REPORT, ruled_out=[
+            {"cause": "database_unavailable", "reason": "db is up",
+             "citation": {"evidence_id": "E1", "field": "status_code", "value": "200"}}])
+        done = _events(self._investigate(self._investigate_script(report)))[-1]
+        rows = done["validation"]["citations"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]["citation"], report["ruled_out"][0]["citation"])
+
     def test_server_never_touches_fault_ground_truth(self):
         source = Path(server.__file__).read_text()
         for node in ast.walk(ast.parse(source)):
@@ -213,6 +250,55 @@ class TestDemoServer(unittest.TestCase):
                     self.assertNotIn("faults", alias.name)
         html = (Path(server.__file__).parent / "index.html").read_text()
         self.assertNotIn("faults", html)
+
+
+@unittest.skipUnless(HAS_WEB, "needs fastapi and httpx: run with .venv/bin/python")
+class TestSummarizeCheck(unittest.TestCase):
+    def test_each_check_has_a_plain_line(self):
+        cases = [
+            ("list_containers",
+             {"containers": [{"name": "incidentlab-app-1", "state": "running"},
+                             {"name": "incidentlab-db-1", "state": "exited"}]},
+             True, "app: running, db: exited"),
+            ("list_containers", {"containers": []}, True, "no containers"),
+            ("inspect_container",
+             {"name": "incidentlab-db-1", "status": "running", "health": "healthy"},
+             True, "db: running, healthy"),
+            ("container_logs", {"lines": ["a", "b"], "older_lines_omitted": 5},
+             True, "2 lines, 5 older omitted"),
+            ("container_logs", {"lines": [], "older_lines_omitted": 0},
+             True, "0 lines"),
+            ("disk_usage",
+             {"use_percent": 9.1, "available_mb": 410.2, "inode_use_percent": 3.0},
+             True, "9.1% used, 410.2 MB free"),
+            ("disk_usage",
+             {"use_percent": 9.1, "available_mb": 410.2, "inode_use_percent": 87.0},
+             True, "9.1% used, 410.2 MB free, inodes 87.0% used"),
+            ("path_access",
+             {"path": "/srv/lab-data/uploads", "mode": "0755",
+              "owner_uid": 0, "owner_gid": 0, "app_user_can_write": False},
+             True, "uploads: app user cannot write (0755 0:0)"),
+            ("recent_events", {"minutes": 15, "events": []},
+             True, "no events in last 15 min"),
+            ("recent_events",
+             {"minutes": 15, "events": [
+                 {"container": "incidentlab-app-1", "action": "start"},
+                 {"container": "incidentlab-db-1", "action": "die"}]},
+             True, "2 events in last 15 min, latest db die"),
+            ("app_health", {"status_code": 200, "body": "ok"}, True, "200 ok"),
+            ("app_health", {"status_code": 503, "body": "unhealthy"},
+             True, "503 unhealthy"),
+            ("app_health", {"status_code": None, "error": "refused"},
+             True, "unreachable (refused)"),
+            ("disk_usage", {"error": "boom"}, False, "failed: boom"),
+        ]
+        for name, data, ok, want in cases:
+            with self.subTest(name=name, data=data):
+                self.assertEqual(server.summarize_check(name, data, ok), want)
+
+    def test_unknown_check_falls_back_to_json(self):
+        self.assertEqual(server.summarize_check("new_check", {"a": 1}, True),
+                         '{"a": 1}')
 
 
 if __name__ == "__main__":

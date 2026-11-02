@@ -389,6 +389,26 @@ REPORT_REQUEST = (
     "considered. Choose insufficient_evidence if the evidence does not single out one cause."
 )
 
+# Structured follow-up answers for the demo page. Citations reuse the report's
+# evidence_id/field/value shape so the same check_citation code validates them.
+FOLLOWUP_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string",
+                   "description": "The answer to the follow-up question."},
+        "citations": {"type": "array", "items": _CITATION,
+                      "description": "One citation per factual claim."},
+    },
+    "required": ["answer", "citations"],
+    "additionalProperties": False,
+}
+
+FOLLOWUP_ANSWER_REQUEST = (
+    "Answer the question now with the evidence you have. Give one citation "
+    "(evidence ID, field, exact value) per factual claim; no citations if the "
+    "answer needs none."
+)
+
 
 def _norm(value) -> str:
     return " ".join(str(value).split()).lower()
@@ -570,15 +590,29 @@ class Investigation:
             raise RuntimeError(f"the report came back empty (status: {getattr(resp, 'status', '?')})")
         return json.loads(resp.output_text)
 
-    def follow_up(self, question: str) -> str:
+    def follow_up(self, question: str, structured: bool = False):
+        """Answer a follow-up. structured=True (demo page only) returns a parsed
+        {"answer", "citations"} dict instead of plain text. The default path is
+        unchanged."""
         self.history.append({"role": "user", "content": question})
         resp = self._tool_loop()
-        if resp is None:
-            self.history.append({"role": "user", "content":
-                                 "Answer the question now with the evidence you have."})
-            resp = self._create(self.history)
-            self._extend_history(resp)
-        return resp.output_text
+        if not structured:
+            if resp is None:
+                self.history.append({"role": "user", "content":
+                                     "Answer the question now with the evidence you have."})
+                resp = self._create(self.history)
+                self._extend_history(resp)
+            return resp.output_text
+        self.history.append({"role": "user", "content": FOLLOWUP_ANSWER_REQUEST})
+        resp = self._create(
+            self.history,
+            text={"format": {"type": "json_schema", "name": "followup_answer",
+                             "schema": FOLLOWUP_SCHEMA, "strict": True}},
+        )
+        self._extend_history(resp)
+        if not resp.output_text:
+            raise RuntimeError(f"the answer came back empty (status: {getattr(resp, 'status', '?')})")
+        return json.loads(resp.output_text)
 
 
 def _short_args(raw: str) -> str:

@@ -26,7 +26,13 @@
   ul { margin-top: 0.2em; padding-left: 1.4em; }
   li { margin: 0.25em 0; }
   .cite-detail { color: #444; font-size: 0.9em; }
-  #status { margin-left: 0.6em; }
+  .cite-link { background: none; border: none; padding: 0; margin: 0 0 0 0.4em;
+               font: inherit; color: #1a4fa0; text-decoration: underline;
+               cursor: pointer; }
+  mark.hit { background: #ffe08a; }
+  details.flash > summary { background: #fff3c4; }
+  .trail-sum { color: #333; }
+  #status { display: inline-block; margin-left: 0.6em; }
   .qa { margin: 0.6em 0; }
 </style>
 </head>
@@ -37,7 +43,7 @@
 <section>
   <h2>Symptom</h2>
   <textarea id="symptom">Uploads have stopped working. Find out what is happening.</textarea><br>
-  <button id="go">Investigate</button><span id="status" role="status"></span>
+  <button id="go">Investigate</button> <span id="status" role="status"></span>
 </section>
 
 <section>
@@ -121,33 +127,86 @@ function addCheck(ev) {
   const empty = document.querySelector("#trail .empty");
   if (empty) empty.remove();
   const box = document.createElement("details");
+  box.id = "ev-" + ev.evidence_id;
   const head = document.createElement("summary");
   const id = document.createElement("strong");
   id.textContent = ev.evidence_id;
   const name = document.createElement("code");
   name.textContent = `${ev.check}(${ev.arguments})`;
-  head.append(id, name, badge(ev.ok, "ok", "error: " + (ev.data.error || "failed")));
+  const sum = document.createElement("span");
+  sum.className = "trail-sum";
+  sum.textContent = " — " + (ev.summary || "result recorded");
+  const err = ev.data && ev.data.error;
+  head.append(id, name, badge(ev.ok, "ok", "error: " + (err || "failed")), sum);
   const data = document.createElement("pre");
-  data.textContent = JSON.stringify(ev.data, null, 2);
+  data.textContent = JSON.stringify(ev.data === undefined ? null : ev.data, null, 2);
   box.append(head, data);
   $("trail").append(box);
 }
 
-function addCitation(list, row) {
+function clearEvidenceMarks() {
+  document.querySelectorAll("mark.hit").forEach((m) => {
+    m.replaceWith(document.createTextNode(m.textContent));
+  });
+  document.querySelectorAll("details.flash").forEach((d) => d.classList.remove("flash"));
+  $("trail").normalize();
+}
+
+function highlightValue(pre, value) {
+  const needle = String(value === undefined || value === null ? "" : value);
+  if (!needle || !pre) return;
+  const lower = needle.toLowerCase();
+  const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const at = node.textContent.toLowerCase().indexOf(lower);
+    if (at < 0) continue;
+    const match = node.splitText(at);
+    match.splitText(needle.length);
+    const mark = document.createElement("mark");
+    mark.className = "hit";
+    match.parentNode.insertBefore(mark, match);
+    mark.appendChild(match);
+    return;
+  }
+}
+
+function gotoEvidence(cite) {
+  clearEvidenceMarks();
+  const el = document.getElementById("ev-" + cite.evidence_id);
+  if (!el) {
+    $("status").textContent = cite.evidence_id + " is not in the evidence trail";
+    return;
+  }
+  el.classList.add("flash");
+  el.open = true;
+  el.scrollIntoView({block: "nearest"});
+  highlightValue(el.querySelector("pre"), cite.value);
+}
+
+function addCitation(listEl, row) {
   const li = document.createElement("li");
   li.append(document.createTextNode(row.text + " "), badge(row.supported, "supported", "UNSUPPORTED"));
+  if (row.citation && row.citation.evidence_id) {
+    const link = document.createElement("button");
+    link.className = "cite-link";
+    link.textContent = `${row.citation.evidence_id}.${row.citation.field}`;
+    link.title = `Show ${row.citation.evidence_id} in the evidence trail`;
+    link.addEventListener("click", () => gotoEvidence(row.citation));
+    li.append(link);
+  }
   const detail = document.createElement("div");
   detail.className = "cite-detail";
   detail.textContent = row.detail;
   li.append(detail);
-  $(list).append(li);
+  listEl.append(li);
 }
 
 function showReport(ev) {
   $("cause").textContent = ev.report.cause;
   $("summary").textContent = ev.report.summary;
   for (const row of ev.validation.citations) {
-    addCitation(row.kind === "finding" ? "findings" : "ruledout", row);
+    addCitation($(row.kind === "finding" ? "findings" : "ruledout"), row);
   }
   if (!ev.report.findings.length) $("findings").append("None.");
   if (!ev.report.ruled_out.length) $("ruledout").append("None.");
@@ -219,6 +278,16 @@ async function followup() {
       if (ev.type === "check") addCheck(ev);
       else if (ev.type === "answer") {
         answer.textContent = ev.text;
+        if (ev.citations && ev.citations.length) {
+          const ul = document.createElement("ul");
+          for (const row of ev.citations) {
+            addCitation(ul, {
+              text: String(row.citation.value).slice(0, 160),
+              supported: row.supported, detail: row.detail, citation: row.citation,
+            });
+          }
+          box.insertBefore(ul, stats);
+        }
         stats.textContent = `${ev.seconds}s, ~$${ev.cost_usd.toFixed(3)} session total`;
       }
       else if (ev.type === "error") answer.textContent = "failed: " + ev.message;

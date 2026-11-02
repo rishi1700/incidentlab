@@ -5,6 +5,7 @@ Run from the repo root: python3 -m unittest tests.test_investigate -v
 """
 from __future__ import annotations
 
+import json
 import sys
 import types
 import unittest
@@ -195,6 +196,39 @@ class TestOnCheck(unittest.TestCase):
             inv._answer(call)
         self.assertEqual(events, [])
         self.assertEqual(inv.evidence, {})
+
+
+class TestFollowupStructured(unittest.TestCase):
+    def test_default_followup_still_returns_text(self):
+        client = FakeClient([_resp("r1", [FakeItem(MESSAGE)], text="plain")])
+        inv = investigate.Investigation(client)
+        with patch("builtins.print"):
+            self.assertEqual(inv.follow_up("why?"), "plain")
+        self.assertNotIn("text", client.responses.calls[0])
+
+    def test_structured_answer_uses_schema(self):
+        answer = {"answer": "the disk is full",
+                  "citations": [{"evidence_id": "E1", "field": "status_code",
+                                 "value": "200"}]}
+        client = FakeClient([
+            _resp("r1", [FakeItem(CALL)]),
+            _resp("r2", [FakeItem(MESSAGE)]),
+            _resp("r3", [], text=json.dumps(answer)),
+        ])
+        inv = investigate.Investigation(client)
+        with (patch.object(investigate, "run_check", return_value={"status_code": 200}),
+              patch("builtins.print")):
+            result = inv.follow_up("why?", structured=True)
+        self.assertEqual(result, answer)
+        schema_call = client.responses.calls[2]
+        fmt = schema_call["text"]["format"]
+        self.assertEqual(fmt["name"], "followup_answer")
+        self.assertIs(fmt["schema"], investigate.FOLLOWUP_SCHEMA)
+        self.assertEqual(schema_call["input"][-1]["content"],
+                         investigate.FOLLOWUP_ANSWER_REQUEST)
+        # Citations reuse the report's evidence_id/field/value shape.
+        self.assertIs(investigate.FOLLOWUP_SCHEMA["properties"]["citations"]["items"],
+                      investigate._CITATION)
 
 
 if __name__ == "__main__":

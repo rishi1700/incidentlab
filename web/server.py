@@ -67,6 +67,82 @@ def _sse(event: dict) -> str:
     return "data: " + json.dumps(event, default=str) + "\n\n"
 
 
+def _short_container(name: str) -> str:
+    if name.startswith("incidentlab-"):
+        name = name[len("incidentlab-"):]
+    if name.endswith("-1"):
+        name = name[:-2]
+    return name
+
+
+def summarize_check(name: str, data: dict, ok: bool) -> str:
+    """One plain line about a check result for the evidence trail."""
+    if not ok:
+        return f"failed: {data.get('error', 'unknown error')}"
+    if name == "list_containers":
+        rows = data.get("containers", [])
+        if not rows:
+            return "no containers"
+        return ", ".join(f"{_short_container(c.get('name', '?'))}: {c.get('state', '?')}"
+                         for c in rows)
+    if name == "inspect_container":
+        return (f"{_short_container(data.get('name', '?'))}: "
+                f"{data.get('status', '?')}, {data.get('health', '?')}")
+    if name == "container_logs":
+        lines = data.get("lines", [])
+        omitted = data.get("older_lines_omitted", 0)
+        text = f"{len(lines)} line{'s' if len(lines) != 1 else ''}"
+        if omitted:
+            text += f", {omitted} older omitted"
+        return text
+    if name == "disk_usage":
+        text = (f"{data.get('use_percent', '?')}% used, "
+                f"{data.get('available_mb', '?')} MB free")
+        inodes = data.get("inode_use_percent", 0)
+        if isinstance(inodes, (int, float)) and inodes >= 50:
+            text += f", inodes {inodes}% used"
+        return text
+    if name == "path_access":
+        base = os.path.basename(data.get("path", "?"))
+        can = "can write" if data.get("app_user_can_write") else "cannot write"
+        return (f"{base}: app user {can} "
+                f"({data.get('mode', '?')} {data.get('owner_uid', '?')}:"
+                f"{data.get('owner_gid', '?')})")
+    if name == "recent_events":
+        events = data.get("events", [])
+        minutes = data.get("minutes", "?")
+        if not events:
+            return f"no events in last {minutes} min"
+        last = events[-1]
+        noun = "event" if len(events) == 1 else "events"
+        return (f"{len(events)} {noun} in last {minutes} min, latest "
+                f"{_short_container(last.get('container') or '?')} {last.get('action', '?')}")
+    if name == "app_health":
+        if data.get("status_code") is None:
+            return f"unreachable ({data.get('error', 'unknown error')})"
+        body = str(data.get("body") or "")[:80]
+        return f"{data.get('status_code')} {body}" if body else str(data.get("status_code"))
+    return json.dumps(data, default=str)[:120]
+
+
+def _emit_check(events: queue.Queue, event: dict) -> None:
+    """Queue one trail event. Summarizing must never break the stream."""
+    try:
+        summary = summarize_check(event["check"], event["data"], event["ok"])
+    except Exception:   # noqa: BLE001 - fall back to the raw data below
+        summary = "result recorded"
+    events.put({"type": "check", **event, "summary": summary})
+
+
+def _rows_with_citations(report: dict, validation: dict) -> list:
+    """Attach each row's citation so the page can link it to the evidence."""
+    cites = ([item.get("citation", {}) for item in report.get("findings", [])]
+             + [item.get("citation", {}) for item in report.get("ruled_out", [])])
+    rows = validation.get("citations", [])
+    return [{**row, "citation": cites[i] if i < len(cites) else {}}
+            for i, row in enumerate(rows)]
+
+
 def _stream(events: queue.Queue):
     try:
         while True:
@@ -81,11 +157,13 @@ def _stream(events: queue.Queue):
 def _run_investigation(events: queue.Queue, symptom: str) -> None:
     try:
         inv = investigate.Investigation(
-            _client(), on_check=lambda e: events.put({"type": "check", **e}))
+            _client(), on_check=lambda e: _emit_check(events, e))
         started = time.monotonic()
         report = inv.investigate(symptom)
         seconds = round(time.monotonic() - started, 1)
         validation = investigate.validate_report(report, inv.evidence)
+        validation = {**validation,
+                      "citations": _rows_with_citations(report, validation)}
         with _state_lock:
             _state.update(inv=inv, report=report, validation=validation,
                           seconds=seconds)
@@ -99,11 +177,16 @@ def _run_investigation(events: queue.Queue, symptom: str) -> None:
 
 def _run_followup(events: queue.Queue, inv, question: str) -> None:
     try:
-        inv.on_check = lambda e: events.put({"type": "check", **e})
+        inv.on_check = lambda e: _emit_check(events, e)
         started = time.monotonic()
-        text = inv.follow_up(question)
+        result = inv.follow_up(question, structured=True)
         seconds = round(time.monotonic() - started, 1)
-        events.put({"type": "answer", "text": text, "seconds": seconds,
+        citations = []
+        for cite in result.get("citations", []):
+            ok, detail = investigate.check_citation(cite, inv.evidence)
+            citations.append({"citation": cite, "supported": ok, "detail": detail})
+        events.put({"type": "answer", "text": result.get("answer", ""),
+                    "citations": citations, "seconds": seconds,
                     "usage": inv.usage, "cost_usd": round(inv.cost_usd(), 4)})
     except Exception as err:   # noqa: BLE001 - every failure becomes an SSE error event
         events.put({"type": "error", "message": f"{type(err).__name__}: {err}"})
