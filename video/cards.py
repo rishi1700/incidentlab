@@ -18,6 +18,9 @@ def results_numbers() -> dict:
             open(ROOT / "eval" / "results" / "full-1" / "runs.jsonl")]
     cases = sorted({r["case"] for r in recs})
     runs_each = len([r for r in recs if r["case"] == cases[0]])
+    faults = {"volume_full", "upload_dir_not_writable", "database_unavailable"}
+    base_alarms = sum(1 for r in recs
+                      if r["case"].startswith("H") and r["baseline_cause"] in faults)
     p3 = [r for r in recs if r["case"] == "P3"]
     sup = sum(r["citations_supported"] for r in recs)
     tot = sum(r["citations_total"] for r in recs)
@@ -31,6 +34,7 @@ def results_numbers() -> dict:
         "P3_MODEL": str(sum(1 for r in p3 if r["correct"])),
         "P3_BASE": str(sum(1 for r in p3 if r["baseline_correct"])),
         "ALARMS": str(sum(1 for r in recs if r.get("false_alarm"))),
+        "BASE_ALARMS": str(base_alarms),
         "CITE_PCT": str(round(100 * sup / tot)),
         "REPAIRED": str(sum(1 for r in applied if r["recovery_verified"])),
         "REPAIRS": str(len(applied)),

@@ -153,22 +153,29 @@ function clearEvidenceMarks() {
 }
 
 function highlightValue(pre, value) {
-  const needle = String(value === undefined || value === null ? "" : value);
-  if (!needle || !pre) return;
-  const lower = needle.toLowerCase();
-  const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const at = node.textContent.toLowerCase().indexOf(lower);
-    if (at < 0) continue;
-    const match = node.splitText(at);
-    match.splitText(needle.length);
-    const mark = document.createElement("mark");
-    mark.className = "hit";
-    match.parentNode.insertBefore(mark, match);
-    mark.appendChild(match);
-    return;
+  const raw = String(value === undefined || value === null ? "" : value);
+  if (!raw || !pre) return false;
+  // The pre shows JSON.stringify(data), so quotes and backslashes in the
+  // cited value appear escaped there; try that form when the raw text misses.
+  const escaped = JSON.stringify(raw).slice(1, -1);
+  const needles = escaped === raw ? [raw] : [raw, escaped];
+  for (const needle of needles) {
+    const lower = needle.toLowerCase();
+    const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const at = node.textContent.toLowerCase().indexOf(lower);
+      if (at < 0) continue;
+      const match = node.splitText(at);
+      match.splitText(needle.length);
+      const mark = document.createElement("mark");
+      mark.className = "hit";
+      match.parentNode.insertBefore(mark, match);
+      mark.appendChild(match);
+      return true;
+    }
   }
+  return false;
 }
 
 function gotoEvidence(cite) {

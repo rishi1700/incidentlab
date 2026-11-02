@@ -10,6 +10,7 @@ video/record.sh for another take; the lab is reset between takes.
 Run under the video venv: video/.venv/bin/python video/record.py
 """
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -31,23 +32,26 @@ TERMINAL_COMMANDS = [
     ("curl -s -o /dev/null -w '%{http_code}\\n' http://localhost:8080/health", 3.0),
 ]
 
-POINTER_JS = """() => {
-  document.addEventListener('DOMContentLoaded', () => {
-    const ring = document.createElement('div');
-    ring.id = 'take-pointer';
-    ring.style.cssText = 'position:fixed;width:34px;height:34px;margin:-17px 0 0 -17px;'
-      + 'border:3px solid #e11d48;border-radius:50%;pointer-events:none;'
-      + 'z-index:99999;opacity:0;transition:opacity .15s;';
-    document.addEventListener('mousemove', (e) => {
-      ring.style.left = e.clientX + 'px';
-      ring.style.top = e.clientY + 'px';
-      ring.style.opacity = '1';
-    });
-    document.addEventListener('mousedown', () => { ring.style.transform = 'scale(0.7)'; });
-    document.addEventListener('mouseup', () => { ring.style.transform = 'scale(1)'; });
-    document.body.appendChild(ring);
+# Init scripts run as statements: this must not be wrapped in an uninvoked
+# function, or the ring is never created and no click shows a pointer.
+POINTER_JS = """document.addEventListener('DOMContentLoaded', () => {
+  const ring = document.createElement('div');
+  ring.id = 'take-pointer';
+  ring.style.cssText = 'position:fixed;width:24px;height:24px;margin:-12px 0 0 -12px;'
+    + 'border:2px solid #e11d48;border-radius:50%;pointer-events:none;'
+    + 'z-index:99999;opacity:0;transition:opacity .15s;';
+  document.addEventListener('mousemove', (e) => {
+    // position:fixed lives in the zoomed coordinate space while mouse
+    // coordinates don't, so scale them down (150% zoom during takes).
+    const z = (parseFloat(document.body.style.zoom) || 100) / 100;
+    ring.style.left = (e.clientX / z) + 'px';
+    ring.style.top = (e.clientY / z) + 'px';
+    ring.style.opacity = '1';
   });
-}"""
+  document.addEventListener('mousedown', () => { ring.style.transform = 'scale(0.7)'; });
+  document.addEventListener('mouseup', () => { ring.style.transform = 'scale(1)'; });
+  document.body.appendChild(ring);
+});"""
 
 
 def fail(moments, message):
@@ -74,6 +78,7 @@ def record_terminal(playwright, moments):
         marks[command.split()[0] + "_done"] = round(time.monotonic() - t0, 2)
     time.sleep(1.5)
     marks["end"] = round(time.monotonic() - t0, 2)
+    time.sleep(3.0)  # keep recording past the last moment
     path = page.video.path()
     context.close()
     browser.close()
@@ -92,22 +97,27 @@ def record_page(playwright, moments):
     def at():
         return round(time.monotonic() - t0, 2)
 
+    def step_click(x, y):
+        # Visible pointer travel so every click reads on video.
+        page.mouse.move(x, y, steps=15)
+        time.sleep(0.4)
+        page.mouse.click(x, y)
+
     def move_click(selector):
         box = page.locator(selector).bounding_box(timeout=30000)
-        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-        page.mouse.move(x, y, steps=12)
-        time.sleep(0.3)
-        page.mouse.click(x, y)
+        step_click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
 
     try:
         page.add_init_script(POINTER_JS)
         page.goto(PAGE_URL)
         page.wait_for_selector("#go", timeout=30000)
+        page.wait_for_selector("#take-pointer", timeout=10000)
         page.evaluate("document.body.style.zoom = '150%'")
         time.sleep(1.0)
         marks = {}
 
         move_click("#go")
+        page.screenshot(path=str(RAW / "click-investigate.png"))
         marks["investigate_click"] = at()
         try:
             page.wait_for_function(
@@ -122,15 +132,39 @@ def record_page(playwright, moments):
         if cause != "upload_dir_not_writable":
             fail(moments, f"wrong diagnosis for the video: {cause!r}")
 
-        page.locator("#report-sec").scroll_into_view_if_needed()
-        time.sleep(1.5)
-        cite = page.locator("#findings .cite-link").first
+        # Paced to the narration: report on screen ~12 s, then the
+        # citation click, the highlighted value held ~6 s, then questions.
+        page.evaluate("document.getElementById('report-sec')"
+                      ".scrollIntoView({block: 'start'})")
+        time.sleep(12.0)
+        item = page.locator("#findings li", has_text=re.compile("permission denied", re.I))
+        if item.count() == 0:
+            fail(moments, "no 'Permission denied' finding to click")
+        cite = item.first.locator(".cite-link")
         if cite.count() == 0:
-            fail(moments, "first finding has no clickable citation")
-        cite.scroll_into_view_if_needed()
+            fail(moments, "'Permission denied' finding has no clickable citation")
+        cite.evaluate("el => el.scrollIntoView({block: 'center'})")
         time.sleep(0.6)
-        cite.click()
-        time.sleep(2.5)
+        box = cite.bounding_box(timeout=30000)
+        step_click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.screenshot(path=str(RAW / "click-citation.png"))
+        time.sleep(0.5)
+        page.evaluate("""() => {
+          const t = document.querySelector('mark.hit')
+            || document.querySelector('details.flash');
+          if (t) t.scrollIntoView({block: 'center'});
+        }""")
+        time.sleep(0.5)
+        hit_visible = page.evaluate("""() => {
+          const m = document.querySelector('mark.hit');
+          if (!m) return false;
+          const r = m.getBoundingClientRect();
+          return r.bottom > 0 && r.top < window.innerHeight
+            && r.right > 0 && r.left < window.innerWidth;
+        }""")
+        if not hit_visible:
+            fail(moments, "citation highlight is not visible")
+        time.sleep(6.0)
         marks["citation"] = at()
         page.locator("#questions").scroll_into_view_if_needed()
         time.sleep(2.0)
@@ -141,6 +175,7 @@ def record_page(playwright, moments):
         page.keyboard.type("What rules out a full disk?", delay=TYPE_DELAY_MS)
         time.sleep(0.5)
         move_click("#ask")
+        page.screenshot(path=str(RAW / "click-ask.png"))
         marks["ask"] = at()
         try:
             page.wait_for_function(
@@ -155,11 +190,13 @@ def record_page(playwright, moments):
         time.sleep(3.0)
         marks["answer"] = at()
 
-        page.locator("#repair-sec").scroll_into_view_if_needed()
+        page.evaluate("document.getElementById('repair-sec')"
+                      ".scrollIntoView({block: 'center'})")
         time.sleep(1.0)
         if not page.locator("#repair-name").inner_text().strip():
             fail(moments, "no mapped repair shown")
         move_click("#approve")
+        page.screenshot(path=str(RAW / "click-approve.png"))
         marks["approve"] = at()
         try:
             page.wait_for_function(
@@ -169,8 +206,11 @@ def record_page(playwright, moments):
             fail(moments, "verification result never appeared")
         if "FAILED" in page.locator("#repair-out").inner_text():
             fail(moments, "repair or verification reported FAILED")
+        page.evaluate("document.getElementById('repair-out')"
+                      ".scrollIntoView({block: 'center'})")
         time.sleep(3.0)
         marks["verify"] = at()
+        time.sleep(3.0)  # keep recording past the last moment
 
         path = page.video.path()
         context.close()

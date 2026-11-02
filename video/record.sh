@@ -49,7 +49,7 @@ python3 lab/verify.py
 echo "--- starting demo server and terminal server"
 .venv/bin/python web/server.py >"$RAW/server.log" 2>&1 &
 SERVER_PID=$!
-PS1='$ ' "$ROOT/video/.bin/ttyd" -p 7681 -W -t fontSize=26 bash --norc >"$RAW/ttyd.log" 2>&1 &
+PS1='$ ' "$ROOT/video/.bin/ttyd" -p 7681 -W -t fontSize=36 bash --norc >"$RAW/ttyd.log" 2>&1 &
 TTYD_PID=$!
 wait_for_url http://127.0.0.1:8090/ 60
 wait_for_url http://127.0.0.1:7681/ 60

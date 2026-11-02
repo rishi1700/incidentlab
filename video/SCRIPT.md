@@ -6,7 +6,7 @@ A silent 1920×1080 video, 2:57 long, built from one real run in the lab. Rishi 
 
 - **Real footage only.** Scenes 2–6 come from one real run against Meta Model API on the real lab, recorded in a single session. No fake client, and no edited, staged or hand-written outputs. Overlays are fine: captions, speed labels, and a pointer that shows where clicks happen.
 - **Never show or print the API key.** It's in `MODEL_API_KEY`; use it only through `web/server.py` and the lab scripts.
-- **Label sped-up footage** with its speed, for example "2× speed", in a corner.
+- **Label sped-up footage** with its speed, for example "2× speed". Captions and speed labels live in a strip below the footage, with the footage scaled down to make room, so they never cover content.
 - **The results card's numbers come from `eval/results/full-1`** (`runs.jsonl` or `summary.md`), computed by code, never typed by hand.
 - **Show which fault was injected only after the diagnosis appears,** as ground truth that was hidden from the model.
 - **Make text readable** at 1080p on a laptop: zoom the page to about 150% and use a large terminal font.
@@ -25,7 +25,7 @@ A silent 1920×1080 video, 2:57 long, built from one real run in the lab. Rishi 
 - **Cards:** HTML rendered at 1920×1080 to JPEG at quality 92, held as a still with `-framerate 30 -i card.jpg -vf format=yuv420p,loop=-1:1,trim=duration=N -pix_fmt yuv420p`.
 - **Fitting:** fit live footage to its scene by speeding it up, with a label, or by holding the last frame. Leave about a second of stillness at the end of each scene.
 - **Encoding:** encode one file per scene, all with the same size, frame rate and encoder settings (`libx264 -preset veryfast -crf 20`). Write each to a temporary name ending in `.mp4` and rename it when ffmpeg succeeds. Join the scenes with the concat demuxer and `-c copy`.
-- **Check first:** before the full render, save full-size stills of the busiest moments to `video/out/stills/`: the report, the follow-up answer, the verification result and the results card. Check them for readability.
+- **Check first:** before the full render, save full-size stills of the busiest moments to `video/out/stills/`: the report, the follow-up answer, the verification result and the results card, plus one frame per click (Investigate, citation, Ask, Approve repair). Check them for readability.
 
 ## Scenes
 

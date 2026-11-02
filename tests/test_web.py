@@ -170,7 +170,8 @@ class TestDemoServer(unittest.TestCase):
     def test_page_has_polish_wiring(self):
         html = (Path(server.__file__).parent / "index.html").read_text()
         for needle in ("trail-sum", "cite-link", "gotoEvidence", "mark.hit",
-                       ">Investigate</button> <span", '"ev-" +'):
+                       ">Investigate</button> <span", '"ev-" +',
+                       "JSON.stringify(raw)"):
             self.assertIn(needle, html)
 
     def _events_check(self, resp):

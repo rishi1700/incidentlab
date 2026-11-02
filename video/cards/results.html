@@ -8,10 +8,12 @@
          font-family: "DejaVu Sans", sans-serif;
          display: flex; flex-direction: column;
          align-items: center; justify-content: center; }
-  h1 { font-size: 96px; margin: 0 0 50px 0; }
+  h1 { font-size: 96px; margin: 0; }
+  p.sub { font-size: 44px; color: #cfcfcf; margin: 10px 0 40px 0; }
   table { border-collapse: collapse; font-size: 52px; }
   td { padding: 14px 30px; vertical-align: top; }
   td.num { text-align: right; color: #8fd694; white-space: nowrap; }
+  td.dash { text-align: right; color: #8a8a8a; }
   td.dim { color: #cfcfcf; }
   tr.head td { color: #8a8a8a; font-size: 40px; padding-bottom: 4px; text-align: right; }
   tr.head td:first-child { text-align: left; }
@@ -19,13 +21,14 @@
 </head>
 <body>
 <h1>Evaluation: {{CASES}} cases, {{RUNS}} runs each</h1>
+<p class="sub">Expected answers fixed in advance</p>
 <table>
   <tr class="head"><td></td><td>IncidentLab</td><td>Rule-based baseline</td></tr>
   <tr><td class="dim">Correct</td><td class="num">{{MODEL_OK}} of {{TOTAL}}</td><td class="num">{{BASE_OK}} of {{TOTAL}}</td></tr>
   <tr><td class="dim">This case (P3)</td><td class="num">{{P3_MODEL}} of 3</td><td class="num">{{P3_BASE}} of 3, called it healthy</td></tr>
-  <tr><td class="dim">False alarms</td><td class="num" colspan="2">{{ALARMS}}</td></tr>
-  <tr><td class="dim">Citations matching the evidence</td><td class="num" colspan="2">{{CITE_PCT}}%</td></tr>
-  <tr><td class="dim">Repairs verified</td><td class="num" colspan="2">{{REPAIRED}} of {{REPAIRS}}</td></tr>
+  <tr><td class="dim">False alarms</td><td class="num">{{ALARMS}}</td><td class="num">{{BASE_ALARMS}}</td></tr>
+  <tr><td class="dim">Citations matching the evidence</td><td class="num">{{CITE_PCT}}%</td><td class="dash">—</td></tr>
+  <tr><td class="dim">Repairs verified</td><td class="num">{{REPAIRED}} of {{REPAIRS}}</td><td class="dash">—</td></tr>
 </table>
 </body>
 </html>
