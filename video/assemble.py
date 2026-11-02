@@ -8,6 +8,8 @@ pads with held last frames, and ends each scene with ~1s of stillness.
 
 Paths default under video/out/; VIDEO_RAW and VIDEO_OUT override them
 (used to validate this script against synthetic clips in /tmp).
+TERMINAL_CLIP points scene 2 at the user's own screen recording
+instead of raw/terminal.webm (from build.sh --terminal-clip).
 
 Run: video/.venv/bin/python video/assemble.py  (via video/build.sh)
 """
@@ -155,16 +157,25 @@ def speed_label(speed):
 
 
 def main():
+    term_clip = os.environ.get("TERMINAL_CLIP") or None
     moments = json.loads((RAW / "moments.json").read_text())
-    if "terminal" not in moments or "page" not in moments:
+    if "page" not in moments or ("terminal" not in moments and not term_clip):
         sys.exit("moments.json is from an incomplete take; run video/record.sh first")
-    for name in ("terminal.webm", "page.webm"):
+    if term_clip and not Path(term_clip).is_file():
+        sys.exit(f"terminal clip not found: {term_clip}")
+    for name in (["page.webm"] if term_clip else ["terminal.webm", "page.webm"]):
         if not (RAW / name).exists():
             sys.exit(f"{RAW / name} missing; run video/record.sh first")
-    term, page = RAW / "terminal.webm", RAW / "page.webm"
-    tm, pm = moments["terminal"], moments["page"]
-    term_dur, page_dur = probe_duration(term), probe_duration(page)
-    print(f"raw footage: terminal {term_dur:.2f}s, page {page_dur:.2f}s")
+    page = RAW / "page.webm"
+    pm = moments["page"]
+    page_dur = probe_duration(page)
+    if term_clip:
+        print(f"raw footage: terminal clip {term_clip}, page {page_dur:.2f}s")
+    else:
+        term = RAW / "terminal.webm"
+        tm = moments["terminal"]
+        term_dur = probe_duration(term)
+        print(f"raw footage: terminal {term_dur:.2f}s, page {page_dur:.2f}s")
     scenes = OUT / "scenes"
     scenes.mkdir(parents=True, exist_ok=True)
     stills = OUT / "stills"
@@ -195,15 +206,31 @@ def main():
     plan.append((1, SCENES[1], "title card"))
 
     # Scene 2: terminal, 22 s. Caption over the last 5 s.
-    raw = tm["end"] - 0.4
-    speed = speed_of(raw, 21.0)
-    overlays = [caption("Uploads fail, but the health check says 200",
-                          enable=after(17.0))]
-    if speed > 1.0:
-        overlays.append(speed_tag(speed_label(speed), between(0, 21.0)))
-    scene_from_segments(term, [(0.4, tm["end"], speed)], SCENES[2], overlays,
-                        scenes / "2.mp4", term_dur)
-    plan.append((2, SCENES[2], "terminal" + ("" if speed == 1.0 else f" {speed_label(speed)}")))
+    if term_clip:
+        # The user's own screen recording (.mov, any size): the whole
+        # clip, sped to fit with a label, never cut. The shared scaler
+        # fits it above the strip without cropping.
+        clip_dur = probe_duration(term_clip)
+        speed = speed_of(clip_dur, 21.0)
+        overlays = [caption("Uploads fail, but the health check says 200",
+                              enable=after(17.0))]
+        if speed > 1.0:
+            overlays.append(speed_tag(speed_label(speed), between(0, 21.0)))
+        scene_from_segments(term_clip, [(0, clip_dur, speed)], SCENES[2],
+                            overlays, scenes / "2.mp4", clip_dur)
+        plan.append((2, SCENES[2], "terminal clip"
+                     + ("" if speed == 1.0 else f" {speed_label(speed)}")))
+    else:
+        raw = tm["end"] - 0.4
+        speed = speed_of(raw, 21.0)
+        overlays = [caption("Uploads fail, but the health check says 200",
+                              enable=after(17.0))]
+        if speed > 1.0:
+            overlays.append(speed_tag(speed_label(speed), between(0, 21.0)))
+        scene_from_segments(term, [(0.4, tm["end"], speed)], SCENES[2], overlays,
+                            scenes / "2.mp4", term_dur)
+        plan.append((2, SCENES[2], "terminal"
+                     + ("" if speed == 1.0 else f" {speed_label(speed)}")))
 
     # Scene 3: investigate, 24 s. First 1.2 s at 1x (the click), then speed.
     click, report = pm["investigate_click"], pm["report"]

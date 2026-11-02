@@ -8,6 +8,9 @@ citation, failed follow-up, or a repair that did not verify. Re-run
 video/record.sh for another take; the lab is reset between takes.
 
 Run under the video venv: video/.venv/bin/python video/record.py
+With --skip-terminal, the ttyd scene is skipped (record.sh
+--manual-terminal): only the page session is recorded, and moments.json
+has no "terminal" entry.
 """
 import json
 import re
@@ -27,7 +30,7 @@ VIEWPORT = {"width": 1920, "height": 1080}
 PAGE_VIEWPORT = {"width": 1920, "height": 930}
 PAGE_ZOOM = 115
 PARK_GAP = 40
-PARK_MAX_X = 1900  # keeps the 24px pointer ring fully inside the frame
+PARK_MAX_X = 1900  # keeps the pointer fully inside the frame
 TTYD_URL = "http://127.0.0.1:7681"
 PAGE_URL = "http://127.0.0.1:8090"
 TYPE_DELAY_MS = 70
@@ -40,24 +43,37 @@ TERMINAL_COMMANDS = [
 ]
 
 # Init scripts run as statements: this must not be wrapped in an uninvoked
-# function, or the ring is never created and no click shows a pointer.
+# function, or the pointer is never created and no click shows a pointer.
+# A standard arrow pointer (black with a thin white outline, tip at the
+# mouse point), gliding to each target over about half a second with a
+# small press dip on every click.
 POINTER_JS = """document.addEventListener('DOMContentLoaded', () => {
-  const ring = document.createElement('div');
-  ring.id = 'take-pointer';
-  ring.style.cssText = 'position:fixed;width:24px;height:24px;margin:-12px 0 0 -12px;'
-    + 'border:2px solid #e11d48;border-radius:50%;pointer-events:none;'
-    + 'z-index:99999;opacity:0;transition:opacity .15s;';
+  const ptr = document.createElement('div');
+  ptr.id = 'take-pointer';
+  ptr.style.cssText = 'position:fixed;width:28px;height:28px;margin:-5px 0 0 -7px;'
+    + 'pointer-events:none;z-index:99999;opacity:0;transform-origin:7px 5px;'
+    + 'transition:left .5s ease-out,top .5s ease-out,opacity .15s,transform .12s ease-out;';
+  ptr.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24">'
+    + '<path d="M6 4 L6 17 L10.2 13 L12.2 18.2 L14.6 17.2 L12.6 12 L17.2 12 Z"'
+    + ' fill="black" stroke="white" stroke-width="1.6" stroke-linejoin="round"/></svg>';
   document.addEventListener('mousemove', (e) => {
     // position:fixed lives in the zoomed coordinate space while mouse
     // coordinates don't, so scale them down for the PAGE_ZOOM body zoom.
     const z = (parseFloat(document.body.style.zoom) || 100) / 100;
-    ring.style.left = (e.clientX / z) + 'px';
-    ring.style.top = (e.clientY / z) + 'px';
-    ring.style.opacity = '1';
+    ptr.style.left = (e.clientX / z) + 'px';
+    ptr.style.top = (e.clientY / z) + 'px';
+    ptr.style.opacity = '1';
   });
-  document.addEventListener('mousedown', () => { ring.style.transform = 'scale(0.7)'; });
-  document.addEventListener('mouseup', () => { ring.style.transform = 'scale(1)'; });
-  document.body.appendChild(ring);
+  let pressTimer = 0;
+  document.addEventListener('mousedown', () => {
+    clearTimeout(pressTimer);
+    ptr.style.transform = 'scale(0.85)';
+  });
+  document.addEventListener('mouseup', () => {
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { ptr.style.transform = 'scale(1)'; }, 150);
+  });
+  document.body.appendChild(ptr);
 });"""
 
 
@@ -68,10 +84,11 @@ def fail(moments, message):
 
 
 def click_box(page, box):
-    # Visible pointer travel so every click reads on video.
+    # Visible pointer travel so every click reads on video. The glide
+    # takes about half a second; wait for it to arrive before clicking.
     x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
     page.mouse.move(x, y, steps=15)
-    time.sleep(0.4)
+    time.sleep(0.6)
     page.mouse.click(x, y)
 
 
@@ -269,10 +286,14 @@ def record_page(playwright, moments):
 
 
 def main():
+    skip_terminal = "--skip-terminal" in sys.argv[1:]
     RAW.mkdir(parents=True, exist_ok=True)
     moments = {}
     with sync_playwright() as playwright:
-        record_terminal(playwright, moments)
+        if skip_terminal:
+            print("skipping terminal scene (--skip-terminal)", flush=True)
+        else:
+            record_terminal(playwright, moments)
         record_page(playwright, moments)
     (RAW / "moments.json").write_text(json.dumps(moments, indent=2))
     print("take complete:", moments)
