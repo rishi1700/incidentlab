@@ -197,6 +197,18 @@ def index():
     return FileResponse(ROOT / "web" / "index.html")
 
 
+@app.get("/fonts/{name}")
+def font_file(name: str):
+    # The page vendors its fonts locally and makes no external requests.
+    # Only the shipped woff2 files are reachable here.
+    if not name.endswith(".woff2") or "/" in name or "\\" in name:
+        raise HTTPException(404, "not found")
+    path = ROOT / "web" / "fonts" / name
+    if not path.is_file():
+        raise HTTPException(404, "not found")
+    return FileResponse(path, media_type="font/woff2")
+
+
 @app.post("/api/investigate")
 async def investigate_endpoint(request: Request):
     return _investigate_stream(await request.json())

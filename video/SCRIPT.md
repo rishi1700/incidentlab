@@ -9,7 +9,7 @@ A silent 1920×1080 video, 2:57 long, built from one real run in the lab. Rishi 
 - **Label sped-up footage** with its speed, for example "2× speed". Captions and speed labels live in a strip below the footage, with the footage scaled down to make room, so they never cover content.
 - **The results card's numbers come from `eval/results/full-1`** (`runs.jsonl` or `summary.md`), computed by code, never typed by hand.
 - **Show which fault was injected only after the diagnosis appears,** as ground truth that was hidden from the model.
-- **Make text readable** at 1080p on a laptop: zoom the page to about 150% and use a large terminal font.
+- **Make text readable** at 1080p on a laptop: record the page at the 1920×930 size it occupies above the caption strip (never scaled) with about 115% zoom, so body text is at least 22 px tall, and use a large terminal font.
 
 ## Output
 

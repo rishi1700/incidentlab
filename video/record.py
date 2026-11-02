@@ -21,6 +21,13 @@ RAW = ROOT / "video" / "out" / "raw"
 from playwright.sync_api import sync_playwright
 
 VIEWPORT = {"width": 1920, "height": 1080}
+# The page is recorded at the size it occupies in the final frame (above
+# the 150px caption strip), so assemble.py never scales it. 115% zoom
+# puts body text at 20px * 1.15 = 23px tall in the final 1080p frame.
+PAGE_VIEWPORT = {"width": 1920, "height": 930}
+PAGE_ZOOM = 115
+PARK_GAP = 40
+PARK_MAX_X = 1900  # keeps the 24px pointer ring fully inside the frame
 TTYD_URL = "http://127.0.0.1:7681"
 PAGE_URL = "http://127.0.0.1:8090"
 TYPE_DELAY_MS = 70
@@ -42,7 +49,7 @@ POINTER_JS = """document.addEventListener('DOMContentLoaded', () => {
     + 'z-index:99999;opacity:0;transition:opacity .15s;';
   document.addEventListener('mousemove', (e) => {
     // position:fixed lives in the zoomed coordinate space while mouse
-    // coordinates don't, so scale them down (150% zoom during takes).
+    // coordinates don't, so scale them down for the PAGE_ZOOM body zoom.
     const z = (parseFloat(document.body.style.zoom) || 100) / 100;
     ring.style.left = (e.clientX / z) + 'px';
     ring.style.top = (e.clientY / z) + 'px';
@@ -58,6 +65,48 @@ def fail(moments, message):
     (RAW / "moments.json").write_text(json.dumps(moments, indent=2))
     print(f"TAKE FAILED: {message}", flush=True)
     sys.exit(1)
+
+
+def click_box(page, box):
+    # Visible pointer travel so every click reads on video.
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(x, y, steps=15)
+    time.sleep(0.4)
+    page.mouse.click(x, y)
+
+
+def park_beside_box(page, box, gap=PARK_GAP):
+    """Park the pointer next to the element, off its text."""
+    page.mouse.move(min(box["x"] + box["width"] + gap, PARK_MAX_X),
+                    box["y"] + box["height"] / 2, steps=8)
+
+
+def move_click(page, selector):
+    """Click an element's centre, then park beside it. Returns its box."""
+    box = page.locator(selector).bounding_box(timeout=30000)
+    click_box(page, box)
+    park_beside_box(page, box)
+    return box
+
+
+# After the scene-4 citation click: keep the clicked claim centred in
+# the right panel and the highlighted value centred in the left panel,
+# then nudge the left panel so the "Evidence" heading is never left
+# half cut off at the top.
+SCENE4_FRAME_JS = """() => {
+  const chip = document.querySelector('.cite-link.active');
+  if (chip) chip.scrollIntoView({block: 'center', inline: 'nearest'});
+  const mark = document.querySelector('mark.hit')
+    || document.querySelector('details.flash');
+  if (mark) mark.scrollIntoView({block: 'center', inline: 'nearest'});
+  const panel = document.querySelector('.panel.left');
+  const head = [...panel.querySelectorAll('h2')]
+    .find((e) => e.textContent.trim() === 'Evidence');
+  if (head) {
+    const pr = panel.getBoundingClientRect(), hr = head.getBoundingClientRect();
+    if (hr.top < pr.top && hr.bottom > pr.top) panel.scrollTop -= (pr.top - hr.top);
+  }
+}"""
 
 
 def record_terminal(playwright, moments):
@@ -90,38 +139,29 @@ def record_terminal(playwright, moments):
 def record_page(playwright, moments):
     browser = playwright.chromium.launch()
     context = browser.new_context(
-        viewport=VIEWPORT, record_video_dir=str(RAW), record_video_size=VIEWPORT)
+        viewport=PAGE_VIEWPORT, record_video_dir=str(RAW),
+        record_video_size=PAGE_VIEWPORT)
     page = context.new_page()
     t0 = time.monotonic()
 
     def at():
         return round(time.monotonic() - t0, 2)
 
-    def step_click(x, y):
-        # Visible pointer travel so every click reads on video.
-        page.mouse.move(x, y, steps=15)
-        time.sleep(0.4)
-        page.mouse.click(x, y)
-
-    def move_click(selector):
-        box = page.locator(selector).bounding_box(timeout=30000)
-        step_click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-
     try:
         page.add_init_script(POINTER_JS)
         page.goto(PAGE_URL)
         page.wait_for_selector("#go", timeout=30000)
         page.wait_for_selector("#take-pointer", timeout=10000)
-        page.evaluate("document.body.style.zoom = '150%'")
+        page.evaluate(f"document.body.style.zoom = '{PAGE_ZOOM}%'")
         time.sleep(1.0)
         marks = {}
 
-        move_click("#go")
+        move_click(page, "#go")
         page.screenshot(path=str(RAW / "click-investigate.png"))
         marks["investigate_click"] = at()
         try:
             page.wait_for_function(
-                "document.getElementById('status').textContent === 'done.'",
+                "document.getElementById('status').textContent.startsWith('Finished:')",
                 timeout=600000)
         except Exception:
             fail(moments, "investigation did not finish: "
@@ -145,25 +185,25 @@ def record_page(playwright, moments):
             fail(moments, "'Permission denied' finding has no clickable citation")
         cite.evaluate("el => el.scrollIntoView({block: 'center'})")
         time.sleep(0.6)
-        box = cite.bounding_box(timeout=30000)
-        step_click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        click_box(page, cite.bounding_box(timeout=30000))
+        page.evaluate(SCENE4_FRAME_JS)
+        park_beside_box(page, cite.bounding_box(timeout=30000))
         page.screenshot(path=str(RAW / "click-citation.png"))
         time.sleep(0.5)
-        page.evaluate("""() => {
-          const t = document.querySelector('mark.hit')
-            || document.querySelector('details.flash');
-          if (t) t.scrollIntoView({block: 'center'});
+        framed = page.evaluate("""() => {
+          const visible = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            return r.bottom > 0 && r.top < window.innerHeight
+              && r.right > 0 && r.left < window.innerWidth;
+          };
+          return {chip: visible(document.querySelector('.cite-link.active')),
+                  mark: visible(document.querySelector('mark.hit'))};
         }""")
-        time.sleep(0.5)
-        hit_visible = page.evaluate("""() => {
-          const m = document.querySelector('mark.hit');
-          if (!m) return false;
-          const r = m.getBoundingClientRect();
-          return r.bottom > 0 && r.top < window.innerHeight
-            && r.right > 0 && r.left < window.innerWidth;
-        }""")
-        if not hit_visible:
+        if not framed["mark"]:
             fail(moments, "citation highlight is not visible")
+        if not framed["chip"]:
+            fail(moments, "clicked claim scrolled out of view")
         time.sleep(6.0)
         marks["citation"] = at()
         page.locator("#questions").scroll_into_view_if_needed()
@@ -174,7 +214,7 @@ def record_page(playwright, moments):
         page.click("#question")
         page.keyboard.type("What rules out a full disk?", delay=TYPE_DELAY_MS)
         time.sleep(0.5)
-        move_click("#ask")
+        move_click(page, "#ask")
         page.screenshot(path=str(RAW / "click-ask.png"))
         marks["ask"] = at()
         try:
@@ -195,19 +235,23 @@ def record_page(playwright, moments):
         time.sleep(1.0)
         if not page.locator("#repair-name").inner_text().strip():
             fail(moments, "no mapped repair shown")
-        move_click("#approve")
+        move_click(page, "#approve")
         page.screenshot(path=str(RAW / "click-approve.png"))
         marks["approve"] = at()
         try:
             page.wait_for_function(
-                "document.getElementById('repair-out').textContent.includes('Verification')",
+                "document.getElementById('repair-out').textContent.includes('Verified:')"
+                " || document.getElementById('repair-out').textContent.includes('Not recovered:')",
                 timeout=300000)
         except Exception:
             fail(moments, "verification result never appeared")
-        if "FAILED" in page.locator("#repair-out").inner_text():
-            fail(moments, "repair or verification reported FAILED")
+        if "Not recovered:" in page.locator("#repair-out").inner_text():
+            fail(moments, "repair reported Not recovered")
         page.evaluate("document.getElementById('repair-out')"
                       ".scrollIntoView({block: 'center'})")
+        verify = page.locator("#repair-out .verify-ok")
+        sel = "#repair-out .verify-ok" if verify.count() else "#repair-out"
+        park_beside_box(page, page.locator(sel).bounding_box(timeout=30000))
         time.sleep(3.0)
         marks["verify"] = at()
         time.sleep(3.0)  # keep recording past the last moment

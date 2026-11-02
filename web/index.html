@@ -5,92 +5,296 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IncidentLab demo</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2em auto;
-         padding: 0 1em; line-height: 1.45; }
-  h1 { font-size: 1.5em; }
-  h2 { font-size: 1.15em; border-bottom: 1px solid #ccc; padding-bottom: 0.2em; }
-  h3 { font-size: 1em; margin-bottom: 0.3em; }
-  textarea { width: 100%; height: 3.5em; font: inherit; }
-  input[type=text] { width: 70%; font: inherit; }
-  button { font: inherit; padding: 0.3em 1em; margin: 0.4em 0.4em 0.4em 0; }
-  button:disabled { opacity: 0.5; }
-  .hint, .empty, .stats { color: #444; }
-  .badge { display: inline-block; font-size: 0.8em; padding: 0 0.5em;
-           border-radius: 0.8em; margin-left: 0.5em; }
-  .ok { background: #d8f0d8; color: #1a5c1a; }
-  .err { background: #f6d8d8; color: #7c1f1f; }
-  details { margin: 0.3em 0; }
-  summary { cursor: pointer; }
-  summary code { margin: 0 0.4em; }
-  pre { background: #f4f4f4; padding: 0.6em; overflow-x: auto; font-size: 0.85em; }
-  ul { margin-top: 0.2em; padding-left: 1.4em; }
-  li { margin: 0.25em 0; }
-  .cite-detail { color: #444; font-size: 0.9em; }
-  .cite-link { background: none; border: none; padding: 0; margin: 0 0 0 0.4em;
-               font: inherit; color: #1a4fa0; text-decoration: underline;
-               cursor: pointer; }
-  mark.hit { background: #ffe08a; }
-  details.flash > summary { background: #fff3c4; }
-  .trail-sum { color: #333; }
-  #status { display: inline-block; margin-left: 0.6em; }
-  .qa { margin: 0.6em 0; }
+  :root {
+    --paper: #F3F5F8;
+    --sheet: #FFFFFF;
+    --ink: #16202C;
+    --ink-muted: #5A6676;
+    --rule: #D7DDE5;
+    --exhibit: #2450B8;
+    --marker: #FFE45C;
+    --ok: #17784A;
+    --caution: #9A5B00;
+    --fault: #B42318;
+  }
+  @font-face {
+    font-family: "Atkinson Hyperlegible Next";
+    src: url("fonts/atkinson-next-400.woff2") format("woff2");
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "Atkinson Hyperlegible Next";
+    src: url("fonts/atkinson-next-600.woff2") format("woff2");
+    font-weight: 600; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "Atkinson Hyperlegible Next";
+    src: url("fonts/atkinson-next-700.woff2") format("woff2");
+    font-weight: 700; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "Atkinson Hyperlegible Mono";
+    src: url("fonts/atkinson-mono-400.woff2") format("woff2");
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+    font-size: 20px; line-height: 1.45;
+    display: flex; flex-direction: column;
+  }
+  code, .mono, pre { font-family: "Atkinson Hyperlegible Mono", ui-monospace, monospace; }
+  :focus-visible { outline: 3px solid var(--exhibit); outline-offset: 2px; }
+
+  .topbar {
+    flex: none; display: flex; align-items: center; gap: 24px;
+    padding: 14px 32px; border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .app { font-size: 26px; font-weight: 700; white-space: nowrap; margin: 0; }
+  #steps {
+    list-style: none; margin: 0 0 0 auto; padding: 0;
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .step {
+    display: flex; align-items: center; gap: 10px;
+    border: 2px solid var(--rule); border-radius: 999px;
+    padding: 6px 16px 6px 8px; font-size: 17px; color: var(--ink-muted);
+    transition: border-color 150ms, color 150ms;
+  }
+  .step .n {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid currentColor; font-weight: 700; font-size: 17px;
+  }
+  .step.current { border-color: var(--exhibit); color: var(--exhibit); font-weight: 600; }
+  .step.current .n { background: var(--exhibit); border-color: var(--exhibit); color: #fff; }
+  .step.done { border-color: var(--ok); color: var(--ok); }
+  .step.done .n { background: var(--ok); border-color: var(--ok); color: #fff; }
+
+  main {
+    flex: 1; min-height: 0; display: flex; gap: 24px;
+    padding: 24px 32px 32px;
+  }
+  .panel {
+    background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px;
+    padding: 8px 32px 32px; overflow-y: auto; min-height: 0;
+  }
+  .panel.left { flex: 0 0 44%; }
+  .panel.right { flex: 1; min-width: 0; }
+  .panel h2 { font-size: 24px; font-weight: 600; margin: 24px 0 12px; }
+  .panel h3 { font-size: 20px; font-weight: 600; margin: 20px 0 8px; }
+  .panel p, .panel li { max-width: 78ch; }
+  ul { margin: 8px 0; padding-left: 28px; }
+  li { margin: 10px 0; }
+  .muted, .empty, .stats, .cite-detail { color: var(--ink-muted); }
+  .empty, .stats, .cite-detail { font-size: 17px; }
+  .mono { font-size: 17px; }
+
+  button {
+    font: inherit; color: var(--ink); background: #fff;
+    border: 2px solid var(--ink); border-radius: 8px;
+    padding: 10px 22px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover:not(:disabled) { background: var(--paper); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  #approve { background: var(--ink); color: #fff; }
+  #approve:hover:not(:disabled) { background: #2a3648; }
+  textarea, input[type=text] {
+    font: inherit; color: var(--ink);
+    border: 2px solid var(--rule); border-radius: 8px; padding: 10px 12px;
+  }
+  .symptom-row, .ask-row, .approve-row { display: flex; gap: 12px; align-items: flex-start; }
+  #symptom { flex: 1; min-width: 0; resize: vertical; }
+  #question { flex: 1; min-width: 0; }
+  #status { min-height: 1.45em; margin: 12px 0 0; }
+  .approve-row { align-items: center; }
+  .approve-row .muted { font-size: 17px; margin: 0; }
+
+  details.ev-row { padding: 10px 0; border-bottom: 1px solid var(--rule); animation: ev-in 150ms ease-out; }
+  details.ev-row:last-child { border-bottom: none; }
+  details.ev-row > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  details.ev-row > summary::-webkit-details-marker { display: none; }
+  .tag {
+    display: inline-block; color: var(--exhibit); border: 2px solid var(--exhibit);
+    border-radius: 6px; padding: 0 8px; font-weight: 700; font-size: 17px; white-space: nowrap;
+  }
+  .trail-sum { flex: 1; min-width: 200px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; align-self: center; }
+  .dot-ok { background: var(--ok); }
+  .dot-fault { background: var(--fault); }
+  .call { flex-basis: 100%; margin: 2px 0 0 0; color: var(--ink-muted); font-size: 17px; line-height: 1.5; }
+  .err-text { flex-basis: 100%; color: var(--fault); font-size: 17px; }
+  details.ev-row pre {
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 8px;
+    padding: 12px 16px; max-height: 360px; overflow-y: auto; overflow-x: hidden;
+    white-space: pre-wrap; word-break: break-word;
+    font-size: 17px; line-height: 1.5; margin: 10px 0 4px;
+  }
+  mark.hit { background: var(--marker); border-radius: 2px; animation: marker-pulse 0.9s ease-out 1; }
+  @keyframes marker-pulse {
+    0% { background: var(--marker); }
+    50% { background: #FFD21F; }
+    100% { background: var(--marker); }
+  }
+  @keyframes ev-in { from { opacity: 0; } }
+
+  .cite-link {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 2px solid var(--exhibit); border-radius: 6px;
+    background: #fff; padding: 2px 10px; margin-left: 12px;
+    font-size: 17px; cursor: pointer; vertical-align: baseline;
+  }
+  .cite-link .tag { border: none; padding: 0; }
+  .cite-link .field { font-family: "Atkinson Hyperlegible Mono", ui-monospace, monospace; color: var(--ink); }
+  .cite-link .verdict-ok { color: var(--ok); font-weight: 700; }
+  .cite-link.unsupported { border-style: dashed; border-color: var(--caution); }
+  .cite-link.unsupported .tag { color: var(--caution); }
+  .cite-link.unsupported .verdict-no { color: var(--caution); }
+  .cite-link.active, .cite-link.active:hover:not(:disabled) { background: var(--marker); }
+  [hidden] { display: none !important; }
+  .cite-link.lead { margin-left: 0; margin-right: 12px; }
+  .cite-detail { margin-top: 2px; }
+
+  #report-sec, #follow-sec, #repair-sec { scroll-margin-top: 8px; }
+
+  #diagnosis { font-size: 32px; font-weight: 700; margin: 24px 0 4px; line-height: 1.2; }
+  .key { color: var(--ink-muted); margin: 0 0 12px; }
+  #repair-plain { margin-bottom: 4px; }
+  #repair-out p { margin: 8px 0; }
+  #repair-out .ok-line { color: var(--ok); font-weight: 600; }
+  #repair-out .verify-ok {
+    border: 2px solid var(--ok); border-radius: 8px; padding: 10px 14px;
+    color: var(--ok); font-weight: 600;
+  }
+  #repair-out .fault-line { color: var(--fault); font-weight: 600; }
+  .qa { margin: 16px 0; }
+  p.warn { color: var(--caution); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  @media (max-width: 1100px) {
+    html, body { height: auto; }
+    body { display: block; }
+    main { flex-direction: column; }
+    .panel { overflow: visible; }
+    .panel.left { flex: none; }
+  }
 </style>
 </head>
 <body>
-<h1>IncidentLab demo</h1>
-<p class="hint">Inject a fault from the terminal first, then describe the symptom below.</p>
-
-<section>
-  <h2>Symptom</h2>
-  <textarea id="symptom">Uploads have stopped working. Find out what is happening.</textarea><br>
-  <button id="go">Investigate</button> <span id="status" role="status"></span>
-</section>
-
-<section>
-  <h2>Evidence trail</h2>
-  <div id="trail"><p class="empty">No checks yet.</p></div>
-</section>
-
-<section id="report-sec" hidden>
-  <h2>Report</h2>
-  <p>Diagnosis: <strong id="cause"></strong></p>
-  <p id="summary"></p>
-  <h3>Findings</h3>
-  <ul id="findings"></ul>
-  <h3>Ruled out</h3>
-  <ul id="ruledout"></ul>
-  <h3>Open questions</h3>
-  <ul id="questions"></ul>
-  <p class="stats" id="stats"></p>
-</section>
-
-<section id="follow-sec" hidden>
-  <h2>Follow-up</h2>
-  <div id="answers"></div>
-  <input type="text" id="question" placeholder="Ask about this incident">
-  <button id="ask">Ask</button>
-</section>
-
-<section id="repair-sec" hidden>
-  <h2>Repair</h2>
-  <p>Mapped repair: <code id="repair-name"></code></p>
-  <button id="approve">Approve repair</button>
-  <div id="repair-out"></div>
-</section>
-
+<header class="topbar">
+  <h1 class="app">IncidentLab</h1>
+  <ol id="steps">
+    <li class="step todo" data-step="1"><span class="n">1</span><span class="t">Investigate</span></li>
+    <li class="step todo" data-step="2"><span class="n">2</span><span class="t">Report</span></li>
+    <li class="step todo" data-step="3"><span class="n">3</span><span class="t">Approve</span></li>
+    <li class="step todo" data-step="4"><span class="n">4</span><span class="t">Verify</span></li>
+  </ol>
+</header>
+<main>
+  <section class="panel left" aria-label="Complaint and evidence">
+    <h2>What are users seeing?</h2>
+    <div class="symptom-row">
+      <textarea id="symptom" rows="2">Uploads have stopped working. Find out what is happening.</textarea>
+      <button id="go">Investigate</button>
+    </div>
+    <p id="status" role="status"></p>
+    <h2>Evidence</h2>
+    <div id="trail"><p class="empty">Evidence appears here as checks run.</p></div>
+  </section>
+  <section class="panel right" aria-label="Report">
+    <p class="empty" id="report-empty">The report appears when the investigation finishes.</p>
+    <section id="report-sec" hidden>
+      <h2 id="diagnosis"></h2>
+      <p class="key mono" id="cause"></p>
+      <p id="summary"></p>
+      <h3>Findings</h3>
+      <ul id="findings"></ul>
+      <h3>Ruled out</h3>
+      <ul id="ruledout"></ul>
+      <h3>Open questions</h3>
+      <ul id="questions"></ul>
+    </section>
+    <section id="follow-sec" hidden>
+      <h2>Ask a follow-up</h2>
+      <div id="answers"></div>
+      <div class="ask-row">
+        <input type="text" id="question" placeholder="Ask about this incident">
+        <button id="ask">Ask</button>
+      </div>
+    </section>
+    <section id="repair-sec" hidden>
+      <h2>Repair</h2>
+      <div id="repair-have">
+        <p id="repair-plain"></p>
+        <p class="key mono"><code id="repair-name"></code></p>
+        <div class="approve-row">
+          <button id="approve">Approve repair</button>
+          <span class="muted">Nothing changes until you approve.</span>
+        </div>
+        <div id="repair-out"></div>
+      </div>
+      <p class="muted" id="repair-none" hidden>No repair for this diagnosis.</p>
+    </section>
+  </section>
+</main>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
 
-function badge(ok, goodText, badText) {
-  const s = document.createElement("span");
-  s.className = "badge " + (ok ? "ok" : "err");
-  s.textContent = ok ? goodText : badText;
-  return s;
+const DIAGNOSES = {
+  volume_full: "The data volume is full",
+  upload_dir_not_writable: "The app can't write to its upload or staging directory",
+  database_unavailable: "The app can't reach its database",
+  healthy: "Uploads are working",
+  insufficient_evidence: "There isn't enough evidence to name a cause",
+};
+const REPAIR_NAMES = {
+  clear_stale_temp_files: "Delete stale partial uploads older than an hour",
+  restore_upload_dir_access: "Restore access to the upload and staging directories",
+  restore_database: "Start or reconnect the database",
+};
+// Short plain names for the "Ruled out" list, where the server sends
+// rows shaped as "<cause key>: <reason>".
+const CAUSE_NAMES = {
+  volume_full: "Volume full",
+  upload_dir_not_writable: "Upload directory not writable",
+  database_unavailable: "Database unavailable",
+};
+
+function plainCauseName(key) {
+  if (CAUSE_NAMES[key]) return CAUSE_NAMES[key];
+  return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");
+}
+const STEP_LABELS = {1: "Investigate", 2: "Report", 3: "Approve", 4: "Verify"};
+
+function setStep(n, state) {
+  const li = document.querySelector(`#steps li[data-step="${n}"]`);
+  li.className = "step " + state;
+  li.querySelector(".n").textContent = state === "done" ? "✓" : String(n);
+  li.querySelector(".t").textContent = state === "na" ? "Not needed" : STEP_LABELS[n];
+}
+
+function resetSteps() {
+  for (let n = 1; n <= 4; n++) setStep(n, "todo");
 }
 
 function clearChildren(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
+}
+
+function fmtCall(check, args) {
+  let inner = "";
+  try {
+    inner = Object.entries(JSON.parse(args || "{}"))
+      .map(([k, v]) => `${k}=${v}`).join(", ");
+  } catch {
+    inner = args || "";
+  }
+  return `${check}(${inner})`;
 }
 
 // POST and yield each SSE "data:" payload as parsed JSON.
@@ -124,20 +328,33 @@ let checkCount = 0;
 
 function addCheck(ev) {
   checkCount++;
+  $("status").textContent = `Investigating: ${checkCount} checks so far`;
   const empty = document.querySelector("#trail .empty");
   if (empty) empty.remove();
   const box = document.createElement("details");
+  box.className = "ev-row";
   box.id = "ev-" + ev.evidence_id;
   const head = document.createElement("summary");
-  const id = document.createElement("strong");
+  const id = document.createElement("span");
+  id.className = "tag";
   id.textContent = ev.evidence_id;
-  const name = document.createElement("code");
-  name.textContent = `${ev.check}(${ev.arguments})`;
   const sum = document.createElement("span");
   sum.className = "trail-sum";
-  sum.textContent = " — " + (ev.summary || "result recorded");
-  const err = ev.data && ev.data.error;
-  head.append(id, name, badge(ev.ok, "ok", "error: " + (err || "failed")), sum);
+  sum.textContent = ev.summary || "result recorded";
+  const dot = document.createElement("span");
+  dot.className = "dot " + (ev.ok ? "dot-ok" : "dot-fault");
+  dot.title = ev.ok ? "ok" : "error";
+  head.append(id, sum, dot);
+  const call = document.createElement("span");
+  call.className = "call mono";
+  call.textContent = fmtCall(ev.check, ev.arguments);
+  head.append(call);
+  if (!ev.ok && ev.data && ev.data.error) {
+    const err = document.createElement("span");
+    err.className = "err-text";
+    err.textContent = ev.data.error;
+    head.append(err);
+  }
   const data = document.createElement("pre");
   data.textContent = JSON.stringify(ev.data === undefined ? null : ev.data, null, 2);
   box.append(head, data);
@@ -149,6 +366,7 @@ function clearEvidenceMarks() {
     m.replaceWith(document.createTextNode(m.textContent));
   });
   document.querySelectorAll("details.flash").forEach((d) => d.classList.remove("flash"));
+  document.querySelectorAll(".cite-link.active").forEach((c) => c.classList.remove("active"));
   $("trail").normalize();
 }
 
@@ -178,7 +396,7 @@ function highlightValue(pre, value) {
   return false;
 }
 
-function gotoEvidence(cite) {
+function gotoEvidence(cite, chip) {
   clearEvidenceMarks();
   const el = document.getElementById("ev-" + cite.evidence_id);
   if (!el) {
@@ -186,30 +404,67 @@ function gotoEvidence(cite) {
     return;
   }
   el.classList.add("flash");
+  if (chip) chip.classList.add("active");
   el.open = true;
-  el.scrollIntoView({block: "nearest"});
-  highlightValue(el.querySelector("pre"), cite.value);
+  el.scrollIntoView({block: "center", inline: "nearest"});
+  if (highlightValue(el.querySelector("pre"), cite.value)) {
+    const mark = el.querySelector("mark.hit");
+    if (mark) mark.scrollIntoView({block: "center", inline: "nearest"});
+  }
 }
 
 function addCitation(listEl, row) {
   const li = document.createElement("li");
-  li.append(document.createTextNode(row.text + " "), badge(row.supported, "supported", "UNSUPPORTED"));
-  if (row.citation && row.citation.evidence_id) {
-    const link = document.createElement("button");
-    link.className = "cite-link";
-    link.textContent = `${row.citation.evidence_id}.${row.citation.field}`;
-    link.title = `Show ${row.citation.evidence_id} in the evidence trail`;
-    link.addEventListener("click", () => gotoEvidence(row.citation));
-    li.append(link);
+  let text = row.text;
+  if (row.kind === "ruled_out") {
+    const cut = text.indexOf(": ");
+    if (cut > 0) text = plainCauseName(text.slice(0, cut)) + text.slice(cut);
   }
-  const detail = document.createElement("div");
-  detail.className = "cite-detail";
-  detail.textContent = row.detail;
-  li.append(detail);
+  const textNode = document.createTextNode(text);
+  let chip = null;
+  if (row.citation && row.citation.evidence_id) {
+    chip = document.createElement("button");
+    chip.className = "cite-link" + (row.supported ? "" : " unsupported");
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = row.citation.evidence_id;
+    const field = document.createElement("span");
+    field.className = "field";
+    field.textContent = row.citation.field;
+    chip.append(tag, field);
+    if (row.supported) {
+      const ok = document.createElement("span");
+      ok.className = "verdict-ok";
+      ok.textContent = "✓";
+      chip.append(ok);
+    } else {
+      const no = document.createElement("span");
+      no.className = "verdict-no";
+      no.textContent = "unsupported";
+      chip.append(no);
+    }
+    chip.title = `Show ${row.citation.evidence_id} in the evidence trail`;
+    chip.addEventListener("click", () => gotoEvidence(row.citation, chip));
+  }
+  if (chip && row.chipFirst) {
+    chip.classList.add("lead");
+    li.append(chip, textNode);
+  }
+  else {
+    li.append(textNode);
+    if (chip) li.append(chip);
+  }
+  if (!row.supported && row.detail) {
+    const detail = document.createElement("div");
+    detail.className = "cite-detail";
+    detail.textContent = row.detail;
+    li.append(detail);
+  }
   listEl.append(li);
 }
 
 function showReport(ev) {
+  $("diagnosis").textContent = DIAGNOSES[ev.report.cause] || ev.report.cause;
   $("cause").textContent = ev.report.cause;
   $("summary").textContent = ev.report.summary;
   for (const row of ev.validation.citations) {
@@ -223,50 +478,83 @@ function showReport(ev) {
     $("questions").append(li);
   }
   if (!ev.report.open_questions.length) $("questions").append("None.");
-  const u = ev.usage;
-  $("stats").textContent =
-    `${checkCount} checks, ${ev.seconds}s, ${u.requests} requests, ` +
-    `${u.input} input / ${u.output} output tokens, ~$${ev.cost_usd.toFixed(3)}`;
   for (const w of ev.validation.warnings) {
     const p = document.createElement("p");
     p.className = "warn";
-    p.textContent = "WARNING: " + w;
+    p.textContent = "Warning: " + w;
     $("report-sec").append(p);
   }
+  $("report-empty").hidden = true;
   $("report-sec").hidden = false;
   $("follow-sec").hidden = false;
   if (ev.repair) {
+    $("repair-plain").textContent = REPAIR_NAMES[ev.repair] || ev.repair;
     $("repair-name").textContent = ev.repair;
+    $("repair-have").hidden = false;
+    $("repair-none").hidden = true;
+    document.querySelector("#repair-have .approve-row").hidden = false;
     clearChildren($("repair-out"));
     $("approve").disabled = false;
-    $("repair-sec").hidden = false;
+  } else {
+    $("repair-have").hidden = true;
+    $("repair-none").hidden = false;
   }
+  $("repair-sec").hidden = false;
+}
+
+function stopMessage(err) {
+  let text = "Investigation stopped: " + err.message;
+  if (/401/.test(err.message)) text += " Check MODEL_API_KEY and restart the server.";
+  return text;
+}
+
+function finishedStatus(n, seconds, cost) {
+  return `Finished: ${n} checks in ${Math.round(seconds)} s, about $${cost.toFixed(2)}`;
 }
 
 async function investigate() {
   $("go").disabled = true;
-  $("status").textContent = "investigating…";
   checkCount = 0;
+  resetSteps();
+  setStep(1, "current");
+  $("status").textContent = "Investigating: 0 checks so far";
   clearChildren($("trail"));
+  const empty = document.createElement("p");
+  empty.className = "empty";
+  empty.textContent = "Evidence appears here as checks run.";
+  $("trail").append(empty);
   for (const id of ["findings", "ruledout", "questions", "answers"]) clearChildren($(id));
   document.querySelectorAll("#report-sec > p.warn").forEach((p) => p.remove());
   for (const id of ["report-sec", "follow-sec", "repair-sec"]) $(id).hidden = true;
+  $("report-empty").hidden = false;
   try {
     for await (const ev of postEvents("/api/investigate", {symptom: $("symptom").value})) {
       if (ev.type === "check") addCheck(ev);
-      else if (ev.type === "done") { showReport(ev); $("status").textContent = "done."; }
-      else if (ev.type === "error") $("status").textContent = "failed: " + ev.message;
+      else if (ev.type === "done") {
+        showReport(ev);
+        setStep(1, "done");
+        setStep(2, "done");
+        if (ev.repair) {
+          setStep(3, "current");
+        } else {
+          setStep(3, "na");
+          setStep(4, "na");
+        }
+        $("status").textContent = finishedStatus(checkCount, ev.seconds, ev.cost_usd);
+      }
+      else if (ev.type === "error") {
+        resetSteps();
+        $("status").textContent = stopMessage(new Error(ev.message));
+      }
     }
   } catch (err) {
-    $("status").textContent = "failed: " + err.message;
+    resetSteps();
+    $("status").textContent = stopMessage(err);
   }
   $("go").disabled = false;
 }
 
-async function followup() {
-  const q = $("question").value.trim();
-  if (!q) return;
-  $("ask").disabled = true;
+function startFollowup(q) {
   const box = document.createElement("div");
   box.className = "qa";
   const title = document.createElement("div");
@@ -280,23 +568,37 @@ async function followup() {
   box.append(title, answer, stats);
   $("answers").append(box);
   $("question").value = "";
+  return box;
+}
+
+function renderAnswer(box, ev) {
+  const answer = box.querySelector("p");
+  answer.textContent = ev.text;
+  if (ev.citations && ev.citations.length) {
+    const ul = document.createElement("ul");
+    for (const row of ev.citations) {
+      addCitation(ul, {
+        text: "\u201C" + String(row.citation.value).slice(0, 160) + "\u201D",
+        supported: row.supported, detail: row.detail, citation: row.citation,
+        chipFirst: true,
+      });
+    }
+    box.insertBefore(ul, box.querySelector(".stats"));
+  }
+  box.querySelector(".stats").textContent =
+    `Answered in ${ev.seconds} s, session total about $${ev.cost_usd.toFixed(2)}`;
+}
+
+async function followup() {
+  const q = $("question").value.trim();
+  if (!q) return;
+  $("ask").disabled = true;
+  const box = startFollowup(q);
+  const answer = box.querySelector("p");
   try {
     for await (const ev of postEvents("/api/followup", {question: q})) {
       if (ev.type === "check") addCheck(ev);
-      else if (ev.type === "answer") {
-        answer.textContent = ev.text;
-        if (ev.citations && ev.citations.length) {
-          const ul = document.createElement("ul");
-          for (const row of ev.citations) {
-            addCitation(ul, {
-              text: String(row.citation.value).slice(0, 160),
-              supported: row.supported, detail: row.detail, citation: row.citation,
-            });
-          }
-          box.insertBefore(ul, stats);
-        }
-        stats.textContent = `${ev.seconds}s, ~$${ev.cost_usd.toFixed(3)} session total`;
-      }
+      else if (ev.type === "answer") renderAnswer(box, ev);
       else if (ev.type === "error") answer.textContent = "failed: " + ev.message;
     }
   } catch (err) {
@@ -305,17 +607,35 @@ async function followup() {
   $("ask").disabled = false;
 }
 
+function renderRepair(r) {
+  const out = $("repair-out");
+  clearChildren(out);
+  document.querySelector("#repair-have .approve-row").hidden = true;
+  const applied = document.createElement("p");
+  applied.textContent = "Repair applied: " + ((r.repair_result && r.repair_result.detail) || "no result");
+  out.append(applied);
+  if (r.verification) {
+    const line = document.createElement("p");
+    if (r.verification.ok) {
+      line.className = "verify-ok";
+      line.textContent = "\u2713 Verified: " + r.verification.detail;
+    } else {
+      line.className = "fault-line";
+      line.textContent = "Not recovered: " + r.verification.detail;
+    }
+    out.append(line);
+  } else {
+    const line = document.createElement("p");
+    line.className = "fault-line";
+    line.textContent = "Not recovered: the verifier did not run.";
+    out.append(line);
+  }
+}
+
 async function approve() {
   $("approve").disabled = true;
-  clearChildren($("repair-out"));
-  const out = $("repair-out");
-  const line = (label, result) => {
-    const p = document.createElement("p");
-    p.append(document.createTextNode(label + ": "),
-      badge(result && result.ok, result && result.ok ? "OK" : "FAILED", "FAILED"),
-      document.createTextNode(" " + ((result && result.detail) || "no result")));
-    out.append(p);
-  };
+  setStep(3, "done");
+  setStep(4, "current");
   try {
     const resp = await fetch("/api/repair", {method: "POST"});
     if (!resp.ok) {
@@ -324,12 +644,12 @@ async function approve() {
       throw new Error(`${resp.status}: ${detail}`);
     }
     const r = await resp.json();
-    line(`Repair ${r.repair}`, r.repair_result);
-    if (r.verification) line("Verification", r.verification);
+    renderRepair(r);
+    if (r.verification && r.verification.ok) setStep(4, "done");
   } catch (err) {
     const p = document.createElement("p");
-    p.textContent = "failed: " + err.message;
-    out.append(p);
+    p.textContent = "Repair failed: " + err.message;
+    $("repair-out").append(p);
     $("approve").disabled = false;
   }
 }

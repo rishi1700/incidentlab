@@ -46,18 +46,22 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     numbers = results_numbers()
     print("results card numbers:", numbers)
-    template = (ROOT / "video" / "cards" / "results.html").read_text()
-    for key, value in numbers.items():
-        template = template.replace("{{" + key + "}}", value)
-    assert "{{" not in template, "unfilled placeholder in results card"
-    (out / "results.html").write_text(template)
+    fonts_uri = (ROOT / "web" / "fonts").as_uri()
+    rendered = {}
+    for name in ("title", "results", "close"):
+        template = (ROOT / "video" / "cards" / f"{name}.html").read_text()
+        template = template.replace("{{FONTS}}", fonts_uri)
+        if name == "results":
+            for key, value in numbers.items():
+                template = template.replace("{{" + key + "}}", value)
+        assert "{{" not in template, f"unfilled placeholder in {name} card"
+        rendered[name] = out / f"{name}.html"
+        rendered[name].write_text(template)
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
-        for name, src in (("title", ROOT / "video" / "cards" / "title.html"),
-                          ("results", out / "results.html"),
-                          ("close", ROOT / "video" / "cards" / "close.html")):
-            page.goto(src.as_uri())
+        for name in ("title", "results", "close"):
+            page.goto(rendered[name].as_uri())
             page.wait_for_timeout(400)
             page.screenshot(path=str(out / f"{name}.jpg"), type="jpeg", quality=92)
             print("wrote", out / f"{name}.jpg")

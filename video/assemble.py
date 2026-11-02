@@ -36,10 +36,10 @@ ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
 # full-frame: they have no overlays.
 STRIP_H = 150
 FOOT_H = 1080 - STRIP_H
-STRIP_BG = "0x141414"
+STRIP_BG = "0xF3F5F8"
+FONT = str(ROOT / "web" / "fonts" / "atkinson-next-700.woff2")
 CARD_VF = ("scale=1920:1080:force_original_aspect_ratio=decrease:out_range=limited,"
            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p")
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
 def run(cmd):
@@ -60,9 +60,9 @@ def _esc(text):
 
 
 def caption(text, enable=None, size=42):
-    """Centered caption on the strip's bottom line."""
-    spec = (f"drawtext=fontfile={FONT}:fontsize={size}:fontcolor=white:"
-            f"text='{_esc(text)}':box=1:boxcolor=black@0.65:boxborderw=16:"
+    """Centered ink caption on the strip's bottom line."""
+    spec = (f"drawtext=fontfile={FONT}:fontsize={size}:fontcolor=0x16202C:"
+            f"text='{_esc(text)}':"
             f"x=(w-text_w)/2:y=h-text_h-14")
     if enable is not None:
         spec += f":enable={enable}"
@@ -71,8 +71,8 @@ def caption(text, enable=None, size=42):
 
 def speed_tag(text, enable, size=38):
     """Speed label on the strip's top line, right side."""
-    spec = (f"drawtext=fontfile={FONT}:fontsize={size}:fontcolor=#8fd694:"
-            f"text='{_esc(text)}':box=1:boxcolor=black@0.65:boxborderw=16:"
+    spec = (f"drawtext=fontfile={FONT}:fontsize={size}:fontcolor=0x2450B8:"
+            f"text='{_esc(text)}':"
             f"x=w-text_w-40:y=14:enable={enable}")
     return spec
 
