@@ -4,7 +4,7 @@ IncidentLab investigates why a Docker app on Linux has stopped working, explains
 
 Built for the Meta Global AI Developer Hackathon (Indie developer track) with Muse Spark on Meta Model API, and with Muse Code.
 
-**Demo video:** _(add the YouTube link)_
+**Demo video:** https://youtu.be/-jymOnRLxes
 
 ## The problem
 
@@ -148,7 +148,7 @@ limactl shell incidentlab
 Then, in the VM:
 
 ```bash
-git clone https://github.com/<you>/incidentlab.git
+git clone https://github.com/rishi1700/incidentlab.git
 cd incidentlab
 ```
 
